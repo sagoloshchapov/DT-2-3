@@ -689,6 +689,79 @@ let dailyLimit = 5;
 let dailySessionsUsed = 0;
 let lastResetTime = null;
 
+async function sendPromptToAI() {
+    console.log('🚀 Отправляю промт в AI...');
+    console.log('Текущий промт:', currentPrompt?.substring(0, 100));
+    
+    try {
+        const systemMessage = {
+            role: "system",
+            content: currentPrompt || `Ты играешь роль клиента. Веди диалог естественно, как реальный клиент обращается в поддержку.
+
+Вертикаль: ${auth.currentUser.group}
+Тип клиента: ${selectedClientType}. ${clientTypes[selectedClientType]?.description}
+
+Ты должен:
+1. Вести себя соответственно типу клиента (${selectedClientType})
+2. Использовать реалистичные жалобы/вопросы из сферы "${auth.currentUser.group}"
+3. Не упоминать, что это тренировка или симуляция
+4. Реагировать естественно на ответы оператора
+
+Если оператор отправил сообщение "[[ДИАЛОГ ЗАВЕРШЕН]]" - заверши диалог и дай оценку:
+ОЦЕНКА: X/5
+ОБРАТНАЯ СВЯЗЬ: [минимум 3 предложения]
+РЕКОМЕНДАЦИИ: [минимум 5 пунктов]
+
+В остальных случаях - просто продолжай диалог как клиент.`
+        };
+        
+        console.log('📤 Системный промт для AI:', systemMessage.content.substring(0, 200));
+        
+        const messageHistory = chatMessages.map(msg => ({
+            role: msg.sender === 'user' ? 'user' : 'assistant',
+            content: msg.text
+        }));
+        
+        const messages = [systemMessage, ...messageHistory];
+        
+        const response = await fetch(EDGE_FUNCTION_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            },
+            body: JSON.stringify({
+                messages: messages,
+                model: 'deepseek-chat',
+                max_tokens: 500
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error('Ошибка соединения с AI');
+        }
+        
+        const data = await response.json();
+        
+        if (data.choices && data.choices[0] && data.choices[0].message) {
+            const aiResponse = data.choices[0].message.content;
+            console.log('📥 Ответ от AI:', aiResponse.substring(0, 200));
+            addMessage('ai', aiResponse);
+            
+            if (aiResponse.includes('ОЦЕНКА:') || aiResponse.match(/\d+\s*\/\s*5/)) {
+                checkForEvaluationInResponse(aiResponse);
+            }
+        } else {
+            throw new Error('Неверный формат ответа');
+        }
+        
+    } catch (error) {
+        console.error('❌ Ошибка:', error);
+        addMessage('ai', '⚠️ Ошибка соединения. Попробуйте начать тренировку заново.');
+        resetTrainingState();
+    }
+}
+
 document.addEventListener('DOMContentLoaded', async function() {
     const savedUser = localStorage.getItem('dialogue_currentUser');
     

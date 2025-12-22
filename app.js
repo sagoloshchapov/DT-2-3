@@ -1195,6 +1195,52 @@ function selectRandomClientType() {
     selectClientType(randomType);
 }
 
+async function sendPromptToAI() {
+    try {
+        const systemMessage = {
+            role: "system",
+            content: currentPrompt || `Ты играешь роль клиента...` // (остальной промт)
+        };
+        
+        const messageHistory = chatMessages.map(msg => ({
+            role: msg.sender === 'user' ? 'user' : 'assistant',
+            content: msg.text
+        }));
+        
+        const messages = [systemMessage, ...messageHistory];
+        
+        const response = await fetch('https://lpoaqliycyuhvdrwuyxj.supabase.co/functions/v1/rapid-handler', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer sb_publishable_uxkhuA-ngwjNjfaZdHCs7Q_FXOQRrSD'
+            },
+            body: JSON.stringify({
+                messages: messages,
+                model: 'deepseek-chat',
+                max_tokens: 500
+            })
+        });
+        
+        if (!response.ok) throw new Error('Ошибка соединения');
+        
+        const data = await response.json();
+        
+        if (data.choices && data.choices[0] && data.choices[0].message) {
+            const aiResponse = data.choices[0].message.content;
+            addMessage('ai', aiResponse);
+            
+            if (aiResponse.includes('ОЦЕНКА:')) {
+                checkForEvaluationInResponse(aiResponse);
+            }
+        }
+    } catch (error) {
+        console.error('Ошибка:', error);
+        addMessage('ai', '⚠️ Ошибка соединения');
+        resetTrainingState();
+    }
+}
+
 async function startTraining() {
     if (!auth.currentUser) {
         alert('Сначала войдите в систему!');
@@ -1220,78 +1266,6 @@ async function startTraining() {
     
     if (!currentPrompt) {
         alert('Для вашей вертикали нет промтов. Обратитесь к администратору.');
-        return;
-    }
-    
-    trainingInProgress = true;
-    trainingStartTime = new Date();
-    chatMessages = [];
-    lastAIFeedback = "";
-    
-    document.getElementById('startTrainingBtn').style.display = 'none';
-    document.getElementById('chatInput').disabled = false;
-    document.getElementById('sendBtn').disabled = false;
-    document.getElementById('chatStatus').textContent = 'Тренировка активна';
-    document.getElementById('chatStatus').className = 'chat-status training-active';
-    
-    document.querySelectorAll('.client-type-option').forEach(opt => opt.style.pointerEvents = 'none');
-    
-    const chatMessagesDiv = document.getElementById('chatMessages');
-    chatMessagesDiv.innerHTML = '';
-    
-    const clientType = clientTypes[selectedClientType];
-    const initialMessage = `Тренировка началась! Вы работаете с ${clientType.name.toLowerCase()} в вертикали "${auth.currentUser.group}".`;
-    addMessage('ai', initialMessage);
-    
-    await sendPromptToAI();
-    
-    startTrainingTimer();
-    
-    setTimeout(() => {
-        document.getElementById('chatInput').focus();
-        chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight;
-    }, 100);
-}
-
-async function startTraining() {
-    if (!auth.currentUser) {
-        alert('Сначала войдите в систему!');
-        return;
-    }
-    
-    if (!selectedClientType) {
-        alert('Выберите тип клиента для тренировки!');
-        return;
-    }
-    
-    if (dailySessionsUsed >= dailyLimit) {
-        alert('Лимит тренировок на сегодня исчерпан. Сброс в 00:00');
-        return;
-    }
-    
-    if (!auth.currentUser.group) {
-        alert('У вас не указана вертикаль!');
-        return;
-    }
-    
-    // 🔴 ВАЖНО: перезагружаем промты
-    await loadDynamicPrompts();
-    
-    // Получаем промт для текущей вертикали
-    currentPrompt = getPromptForVertical(auth.currentUser.group);
-    
-    // 🔴 ДЕБАГ: смотрим что загрузилось
-    console.log('=== ДЕБАГ ПРОМТОВ ===');
-    console.log('Вертикаль пользователя:', auth.currentUser.group);
-    console.log('Доступные вертикали в промтах:', Object.keys(dynamicVerticalPrompts));
-    console.log('Загруженный промт (первые 200 символов):', currentPrompt?.substring(0, 200));
-    console.log('Длина промта:', currentPrompt?.length);
-    console.log('===================');
-    
-    // 🔴 Проверяем промт
-    if (!currentPrompt || currentPrompt.trim().length < 10) {
-        alert(`Для вертикали "${auth.currentUser.group}" нет доступных сценариев. Обратитесь к администратору.`);
-        console.error('Промт не найден!');
         return;
     }
     

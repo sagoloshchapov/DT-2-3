@@ -1180,72 +1180,76 @@ async function startTraining() {
     }, 100);
 }
 
-async function sendPromptToAI() {
-    try {
-const systemMessage = {
-    role: "system",
-    content: `Ты играешь роль клиента. Веди диалог естественно, как реальный клиент обращается в поддержку.
-
-Вертикаль: ${auth.currentUser.group}
-Тип клиента: ${selectedClientType}. ${clientTypes[selectedClientType]?.description}
-
-Ты должен:
-1. Вести себя соответственно типу клиента (${selectedClientType})
-2. Использовать реалистичные жалобы/вопросы из сферы "${auth.currentUser.group}"
-3. Не упоминать, что это тренировка или симуляция
-4. Реагировать естественно на ответы оператора
-
-Если оператор отправил сообщение "[[ДИАЛОГ ЗАВЕРШЕН]]" - заверши диалог и дай оценку:
-ОЦЕНКА: X/5
-ОБРАТНАЯ СВЯЗЬ: [минимум 3 предложения]
-РЕКОМЕНДАЦИИ: [минимум 5 пунктов]
-
-В остальных случаях - просто продолжай диалог как клиент.`
-};
- 
-        const messageHistory = chatMessages.map(msg => ({
-            role: msg.sender === 'user' ? 'user' : 'assistant',
-            content: msg.text
-        }));
-        
-        const messages = [systemMessage, ...messageHistory];
-        
-        const response = await fetch(EDGE_FUNCTION_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-            },
-            body: JSON.stringify({
-                messages: messages,
-                model: 'deepseek-chat',
-                max_tokens: 500
-            })
-        });
-        
-        if (!response.ok) {
-            throw new Error('Ошибка соединения с AI');
-        }
-        
-        const data = await response.json();
-        
-        if (data.choices && data.choices[0] && data.choices[0].message) {
-            const aiResponse = data.choices[0].message.content;
-            addMessage('ai', aiResponse);
-            
-            // Проверяем, содержит ли ответ оценку
-            if (aiResponse.includes('ОЦЕНКА:') || aiResponse.match(/\d+\s*\/\s*5/)) {
-                checkForEvaluationInResponse(aiResponse);
-            }
-        } else {
-            throw new Error('Неверный формат ответа');
-        }
-        
-    } catch (error) {
-        console.error('Ошибка:', error);
-        addMessage('ai', '⚠️ Ошибка соединения. Попробуйте начать тренировку заново.');
-        resetTrainingState();
+async function startTraining() {
+    if (!auth.currentUser) {
+        alert('Сначала войдите в систему!');
+        return;
     }
+    
+    if (!selectedClientType) {
+        alert('Выберите тип клиента для тренировки!');
+        return;
+    }
+    
+    if (dailySessionsUsed >= dailyLimit) {
+        alert('Лимит тренировок на сегодня исчерпан. Сброс в 00:00');
+        return;
+    }
+    
+    if (!auth.currentUser.group) {
+        alert('У вас не указана вертикаль!');
+        return;
+    }
+    
+    // 🔴 ВАЖНО: перезагружаем промты
+    await loadDynamicPrompts();
+    
+    // Получаем промт для текущей вертикали
+    currentPrompt = getPromptForVertical(auth.currentUser.group);
+    
+    // 🔴 ДЕБАГ: смотрим что загрузилось
+    console.log('=== ДЕБАГ ПРОМТОВ ===');
+    console.log('Вертикаль пользователя:', auth.currentUser.group);
+    console.log('Доступные вертикали в промтах:', Object.keys(dynamicVerticalPrompts));
+    console.log('Загруженный промт (первые 200 символов):', currentPrompt?.substring(0, 200));
+    console.log('Длина промта:', currentPrompt?.length);
+    console.log('===================');
+    
+    // 🔴 Проверяем промт
+    if (!currentPrompt || currentPrompt.trim().length < 10) {
+        alert(`Для вертикали "${auth.currentUser.group}" нет доступных сценариев. Обратитесь к администратору.`);
+        console.error('Промт не найден!');
+        return;
+    }
+    
+    trainingInProgress = true;
+    trainingStartTime = new Date();
+    chatMessages = [];
+    lastAIFeedback = "";
+    
+    document.getElementById('startTrainingBtn').style.display = 'none';
+    document.getElementById('chatInput').disabled = false;
+    document.getElementById('sendBtn').disabled = false;
+    document.getElementById('chatStatus').textContent = 'Тренировка активна';
+    document.getElementById('chatStatus').className = 'chat-status training-active';
+    
+    document.querySelectorAll('.client-type-option').forEach(opt => opt.style.pointerEvents = 'none');
+    
+    const chatMessagesDiv = document.getElementById('chatMessages');
+    chatMessagesDiv.innerHTML = '';
+    
+    const clientType = clientTypes[selectedClientType];
+    const initialMessage = `Тренировка началась! Вы работаете с ${clientType.name.toLowerCase()} в вертикали "${auth.currentUser.group}".`;
+    addMessage('ai', initialMessage);
+    
+    await sendPromptToAI();
+    
+    startTrainingTimer();
+    
+    setTimeout(() => {
+        document.getElementById('chatInput').focus();
+        chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight;
+    }, 100);
 }
 
 function startTrainingTimer() {

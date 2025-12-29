@@ -2993,142 +2993,229 @@ function toggleVerticalGroup(groupId, forceExpand = false) {
     }
 }
 
-// Новая функция поиска учеников
+// Исправленная функция поиска учеников
 async function searchStudents() {
+    console.log('🔍 Поиск учеников запущен...');
+    
     const searchInput = document.getElementById('studentSearchInput');
     const dateFrom = document.getElementById('studentDateFrom');
     const dateTo = document.getElementById('studentDateTo');
     
-    if (!searchInput) return;
+    if (!searchInput) {
+        console.error('❌ Не найден input для поиска!');
+        return;
+    }
     
     const searchTerm = searchInput.value.toLowerCase().trim();
+    console.log('Поисковый запрос:', searchTerm);
+    console.log('Дата от:', dateFrom.value);
+    console.log('Дата до:', dateTo.value);
     
     // Показываем индикатор загрузки
     const studentsContent = document.getElementById('trainerStudentsContent');
-    if (!studentsContent) return;
+    if (!studentsContent) {
+        console.error('❌ Не найден контейнер для учеников!');
+        return;
+    }
     
-    studentsContent.innerHTML = '<p style="color: #666; margin-bottom: 15px; font-size: 14px;">Поиск учеников...</p>';
+    studentsContent.innerHTML = `
+        <div style="text-align: center; padding: 30px;">
+            <div style="font-size: 48px; margin-bottom: 10px;">⏳</div>
+            <div style="color: #666; font-size: 14px;">Ищем учеников...</div>
+        </div>
+    `;
     
     try {
+        console.log('📥 Загружаем учеников из базы...');
         const students = await auth.getStudents();
-        const allSessions = await auth.supabaseRequest('training_sessions?select=*');
+        console.log('Найдено учеников:', students.length);
+        
+        // Если нет учеников
+        if (!students || students.length === 0) {
+            studentsContent.innerHTML = `
+                <div style="text-align: center; padding: 40px; color: #666;">
+                    <div style="font-size: 48px; margin-bottom: 10px;">😕</div>
+                    <div style="font-size: 16px; margin-bottom: 10px;">Нет учеников в системе</div>
+                    <div style="font-size: 12px;">Пока никто не зарегистрировался</div>
+                </div>
+            `;
+            return;
+        }
         
         let filteredStudents = students;
         
-        // Фильтрация по поисковому запросу
+        // 1. Фильтрация по поисковому запросу (имя или группа)
         if (searchTerm) {
-            filteredStudents = students.filter(student => 
-                student.username.toLowerCase().includes(searchTerm) ||
-                (student.group_name && student.group_name.toLowerCase().includes(searchTerm))
-            );
+            console.log('Фильтруем по запросу:', searchTerm);
+            filteredStudents = students.filter(student => {
+                const matchesUsername = student.username.toLowerCase().includes(searchTerm);
+                const matchesGroup = student.group_name && 
+                                    student.group_name.toLowerCase().includes(searchTerm);
+                return matchesUsername || matchesGroup;
+            });
+            console.log('После фильтрации по запросу:', filteredStudents.length);
         }
         
-        // Фильтрация по дате регистрации
+        // 2. Фильтрация по дате регистрации (если указаны даты)
         if (dateFrom.value || dateTo.value) {
+            console.log('Фильтруем по дате...');
             filteredStudents = filteredStudents.filter(student => {
-                if (!student.stats) return true;
-                
                 try {
-                    const stats = typeof student.stats === 'string' ? 
-                        JSON.parse(student.stats) : student.stats;
+                    // Пытаемся получить дату регистрации
+                    let registrationDate = null;
                     
-                    if (!stats.registrationDate) return true;
+                    if (student.stats) {
+                        const stats = typeof student.stats === 'string' ? 
+                            JSON.parse(student.stats) : student.stats;
+                        registrationDate = stats.registrationDate;
+                    }
                     
-                    const regDate = new Date(stats.registrationDate);
+                    // Если нет даты регистрации - пропускаем
+                    if (!registrationDate) {
+                        return true;
+                    }
+                    
+                    const regDate = new Date(registrationDate);
                     const fromDate = dateFrom.value ? new Date(dateFrom.value) : null;
                     const toDate = dateTo.value ? new Date(dateTo.value) : null;
                     
-                    if (fromDate && regDate < fromDate) return false;
-                    if (toDate && regDate > toDate) return false;
+                    // Сравниваем даты
+                    if (fromDate && regDate < fromDate) {
+                        return false; // Раньше начальной даты
+                    }
+                    if (toDate && regDate > toDate) {
+                        return false; // Позже конечной даты
+                    }
                     
                     return true;
-                } catch (e) {
-                    return true;
+                } catch (error) {
+                    console.warn('Ошибка при фильтрации студента:', student.username, error);
+                    return true; // Если ошибка - оставляем студента
                 }
             });
+            console.log('После фильтрации по дате:', filteredStudents.length);
         }
         
-        // Группировка по вертикалям
-        const studentsByGroup = {};
-        filteredStudents.forEach(student => {
-            const group = student.group_name || 'Без вертикали';
-            if (!studentsByGroup[group]) {
-                studentsByGroup[group] = [];
-            }
-            studentsByGroup[group].push(student);
-        });
+        // 3. Показываем результаты
+        console.log('Отображаем результаты...');
         
-        let html = `
-            <div class="stats-cards">
-                <div class="stat-card">
-                    <div class="value">${filteredStudents.length}</div>
-                    <div class="label">Найдено учеников</div>
+        let html = '';
+        
+        if (filteredStudents.length === 0) {
+            // Если ничего не найдено
+            html = `
+                <div style="text-align: center; padding: 40px; color: #666;">
+                    <div style="font-size: 48px; margin-bottom: 10px;">🔍</div>
+                    <div style="font-size: 16px; margin-bottom: 10px;">Ничего не найдено</div>
+                    <div style="font-size: 12px; margin-bottom: 20px;">
+                        Попробуйте изменить условия поиска
+                    </div>
+                    <button class="btn btn-secondary" onclick="loadAllStudents()">
+                        <i class="fas fa-redo"></i> Показать всех учеников
+                    </button>
                 </div>
-            </div>
+            `;
+        } else {
+            // Если найдены ученики - показываем статистику
+            html = `
+                <div class="stats-cards">
+                    <div class="stat-card">
+                        <div class="value">${filteredStudents.length}</div>
+                        <div class="label">Найдено учеников</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="value">${students.length}</div>
+                        <div class="label">Всего в системе</div>
+                    </div>
+                </div>
+                
+                <div class="section-title" style="margin-top: 25px;">
+                    <i class="fas fa-list"></i>
+                    <span>Результаты поиска</span>
+                    ${searchTerm ? `<span style="font-size: 12px; color: #666; margin-left: 10px;">По запросу: "${searchTerm}"</span>` : ''}
+                </div>
+                
+                <div class="students-list">
+            `;
             
-            <div class="section-title" style="margin-top: 25px;">
-                <i class="fas fa-users"></i>
-                <span>Результаты поиска</span>
-                ${searchTerm ? `<span style="font-size: 12px; color: #666; margin-left: 10px;">По запросу: "${searchTerm}"</span>` : ''}
-            </div>
-        `;
-        
-        if (filteredStudents.length > 0) {
-            for (const [group, groupStudents] of Object.entries(studentsByGroup)) {
-                const groupId = `group_${group.replace(/\s+/g, '_')}_search`;
-                html += `
-                    <div class="vertical-group" id="${groupId}">
-                        <div class="vertical-header" onclick="toggleVerticalGroup('${groupId}')">
-                            <div>
-                                <i class="fas fa-building"></i>
-                                <span>${group}</span>
-                                <span class="vertical-count">${groupStudents.length}</span>
-                            </div>
-                            <div class="toggle-icon">▼</div>
-                        </div>
-                        <div class="vertical-content" id="${groupId}_content">
-                `;
+            // Для каждого ученика создаем карточку
+            filteredStudents.forEach((student, index) => {
+                // Получаем уровень ученика
+                let studentLevel = 1;
+                let studentXP = 0;
                 
-                groupStudents.forEach(student => {
-                    const studentSessions = allSessions?.filter(s => s.user_id === student.id) || [];
-                    const totalScore = studentSessions.reduce((sum, s) => sum + (s.score || 0), 0);
-                    const avgScore = studentSessions.length > 0 ? (totalScore / studentSessions.length).toFixed(1) : '0.0';
-                    
-                    html += `
-                        <div class="student-item">
-                            <div class="student-info">
-                                <div class="student-name">${student.username}</div>
-                                <div class="student-group">${student.group_name || 'Без вертикали'}</div>
-                            </div>
-                            <div class="student-stats">
-                                <div class="stat-badge">${studentSessions.length} тренировок</div>
-                                <div class="stat-badge">Средний: ${avgScore}/5</div>
-                                <div class="stat-badge">Уровень: ${student.stats?.currentLevel || 1}</div>
-                            </div>
-                            <div class="trainer-actions">
-                                <button class="view-chat-btn-trainer" onclick="viewStudentSessions('${student.id}', '${student.username}')">
-                                    <i class="fas fa-history"></i> Тренировки
-                                </button>
-                            </div>
-                        </div>
-                    `;
-                });
+                try {
+                    if (student.stats) {
+                        const stats = typeof student.stats === 'string' ? 
+                            JSON.parse(student.stats) : student.stats;
+                        studentLevel = stats.currentLevel || 1;
+                        studentXP = stats.totalXP || 0;
+                    }
+                } catch (e) {
+                    console.warn('Ошибка парсинга stats для:', student.username);
+                }
                 
                 html += `
+                    <div class="student-item" style="animation-delay: ${index * 0.05}s;">
+                        <div class="student-info">
+                            <div class="student-name">
+                                <span style="color: #333; font-weight: 600;">${student.username}</span>
+                                <span style="margin-left: 5px; font-size: 11px; color: #666;">(Уровень ${studentLevel})</span>
+                            </div>
+                            <div class="student-group">
+                                <i class="fas fa-building" style="margin-right: 5px;"></i>
+                                ${student.group_name || 'Без вертикали'}
+                            </div>
+                        </div>
+                        <div class="student-stats">
+                            <div class="stat-badge">${studentXP} XP</div>
+                            <div class="stat-badge">Уровень ${studentLevel}</div>
+                        </div>
+                        <div class="trainer-actions">
+                            <button class="view-chat-btn-trainer" 
+                                    onclick="viewStudentSessions('${student.id}', '${student.username}')">
+                                <i class="fas fa-history"></i> Тренировки
+                            </button>
                         </div>
                     </div>
                 `;
-            }
-        } else {
-            html += '<div style="text-align: center; padding: 20px; color: #666;">По вашему запросу ничего не найдено</div>';
+            });
+            
+            html += `</div>`;
         }
         
         studentsContent.innerHTML = html;
+        console.log('✅ Поиск завершен успешно!');
         
     } catch (error) {
-        console.error('Ошибка поиска учеников:', error);
-        studentsContent.innerHTML = '<p style="color: #dc3545;">Ошибка поиска</p>';
+        console.error('❌ Ошибка при поиске учеников:', error);
+        studentsContent.innerHTML = `
+            <div style="text-align: center; padding: 40px; color: #dc3545;">
+                <div style="font-size: 48px; margin-bottom: 10px;">⚠️</div>
+                <div style="font-size: 16px; margin-bottom: 10px;">Ошибка загрузки</div>
+                <div style="font-size: 12px;">${error.message}</div>
+                <button class="btn btn-secondary" onclick="loadAllStudents()" style="margin-top: 15px;">
+                    <i class="fas fa-redo"></i> Попробовать снова
+                </button>
+            </div>
+        `;
     }
+}
+
+// Добавь эту функцию для очистки поиска
+function clearStudentSearch() {
+    console.log('🧹 Очищаем поиск...');
+    
+    const searchInput = document.getElementById('studentSearchInput');
+    const dateFrom = document.getElementById('studentDateFrom');
+    const dateTo = document.getElementById('studentDateTo');
+    
+    if (searchInput) searchInput.value = '';
+    if (dateFrom) dateFrom.value = '';
+    if (dateTo) dateTo.value = '';
+    
+    // Показываем всех учеников
+    loadAllStudents();
 }
 
 // Новая функция поиска тренировок

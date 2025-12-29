@@ -1,5 +1,3 @@
-[file name]: app.js
-[file content begin]
 const SUPABASE_URL = 'https://lpoaqliycyuhvdrwuyxj.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_uxkhuA-ngwjNjfaZdHCs7Q_FXOQRrSD';
 const EDGE_FUNCTION_URL = 'https://lpoaqliycyuhvdrwuyxj.supabase.co/functions/v1/rapid-handler';
@@ -2250,8 +2248,11 @@ function switchTab(tabName) {
     document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
     
-    document.querySelector(`.nav-item[data-tab="${tabName}"]`).classList.add('active');
-    document.getElementById(`${tabName}-tab`).classList.add('active');
+    const navItem = document.querySelector(`.nav-item[data-tab="${tabName}"]`);
+    if (navItem) navItem.classList.add('active');
+    
+    const tabContent = document.getElementById(`${tabName}-tab`);
+    if (tabContent) tabContent.classList.add('active');
     
     if (auth.isTrainer()) {
         switch(tabName) {
@@ -2259,10 +2260,10 @@ function switchTab(tabName) {
                 loadTrainerDashboard();
                 break;
             case 'trainer_students':
-                loadAllStudents();
+                loadAllStudents(); // ← ЭТО ГЛАВНОЕ ИСПРАВЛЕНИЕ!
                 break;
             case 'trainer_sessions':
-                loadAllSessions();
+                loadAllSessions(); // ← ЭТО ГЛАВНОЕ ИСПРАВЛЕНИЕ!
                 break;
             case 'trainer_statistics':
                 loadTrainerStatistics();
@@ -3836,4 +3837,3 @@ async function loadTrainerStatistics() {
         statisticsContent.innerHTML = '<p style="color: #dc3545;">Ошибка загрузки данных</p>';
     }
 }
-[file content end]

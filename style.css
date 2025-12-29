@@ -1,3 +1,4 @@
+/* ================= ОСНОВНЫЕ СТИЛИ ================= */
 * {
     margin: 0;
     padding: 0;
@@ -22,8 +23,287 @@ body {
     min-height: 90vh;
     display: flex;
     flex-direction: column;
+    position: relative;
 }
 
+/* Новогодняя тема - включается добавлением класса .new-year-theme к .container */
+.container.new-year-theme {
+    overflow: hidden;
+}
+
+/* Снежинки в углах контейнера */
+.snowflake-corner {
+    position: absolute;
+    font-size: 20px;
+    opacity: 0.6;
+    z-index: 0;
+    pointer-events: none;
+    animation: snowflakeFloat 10s linear infinite;
+    -webkit-animation: snowflakeFloat 10s linear infinite;
+}
+
+.snowflake-corner:nth-child(1) {
+    top: 10px;
+    right: 10px;
+    animation-delay: 0s;
+    -webkit-animation-delay: 0s;
+}
+
+.snowflake-corner:nth-child(2) {
+    bottom: 10px;
+    left: 10px;
+    animation-delay: 3s;
+    -webkit-animation-delay: 3s;
+}
+
+.snowflake-corner:nth-child(3) {
+    top: 50%;
+    left: 10px;
+    animation-delay: 6s;
+    -webkit-animation-delay: 6s;
+}
+
+.snowflake-corner:nth-child(4) {
+    top: 10px;
+    right: 50%;
+    animation-delay: 9s;
+    -webkit-animation-delay: 9s;
+}
+
+@keyframes snowflakeFloat {
+    0%, 100% { 
+        transform: translateY(0) scale(1);
+        -webkit-transform: translateY(0) scale(1);
+        opacity: 0.6;
+    }
+    50% { 
+        transform: translateY(-10px) scale(1.1);
+        -webkit-transform: translateY(-10px) scale(1.1);
+        opacity: 1;
+    }
+}
+
+@-webkit-keyframes snowflakeFloat {
+    0%, 100% { 
+        transform: translateY(0) scale(1);
+        -webkit-transform: translateY(0) scale(1);
+        opacity: 0.6;
+    }
+    50% { 
+        transform: translateY(-10px) scale(1.1);
+        -webkit-transform: translateY(-10px) scale(1.1);
+        opacity: 1;
+    }
+}
+
+/* Новогодний декор хедера */
+.new-year-decoration {
+    position: relative;
+    overflow: visible;
+}
+
+.new-year-decoration::before {
+    content: "🎄";
+    position: absolute;
+    top: 15px;
+    left: 15px;
+    font-size: 28px;
+    z-index: 2;
+    pointer-events: none;
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,0.2));
+    will-change: transform;
+    animation: floatTree 6s ease-in-out infinite;
+    -webkit-animation: floatTree 6s ease-in-out infinite;
+}
+
+.new-year-decoration::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 36px;
+    height: 36px;
+    background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23ffffff"><path d="M12 2L9 8H2L7 13L4 20L12 16L20 20L17 13L22 8H15L12 2Z"/></svg>');
+    background-size: contain;
+    opacity: 0.8;
+    z-index: 2;
+    pointer-events: none;
+    will-change: transform;
+    animation: snowflakeSpin 8s linear infinite;
+    -webkit-animation: snowflakeSpin 8s linear infinite;
+}
+
+@keyframes floatTree {
+    0%, 100% { 
+        transform: translateY(0) rotate(0deg);
+        -webkit-transform: translateY(0) rotate(0deg);
+    }
+    50% { 
+        transform: translateY(-5px) rotate(2deg);
+        -webkit-transform: translateY(-5px) rotate(2deg);
+    }
+}
+
+@-webkit-keyframes floatTree {
+    0%, 100% { 
+        transform: translateY(0) rotate(0deg);
+        -webkit-transform: translateY(0) rotate(0deg);
+    }
+    50% { 
+        transform: translateY(-5px) rotate(2deg);
+        -webkit-transform: translateY(-5px) rotate(2deg);
+    }
+}
+
+@keyframes snowflakeSpin {
+    0% { 
+        transform: rotate(0deg);
+        -webkit-transform: rotate(0deg);
+    }
+    100% { 
+        transform: rotate(360deg);
+        -webkit-transform: rotate(360deg);
+    }
+}
+
+@-webkit-keyframes snowflakeSpin {
+    0% { 
+        transform: rotate(0deg);
+        -webkit-transform: rotate(0deg);
+    }
+    100% { 
+        transform: rotate(360deg);
+        -webkit-transform: rotate(360deg);
+    }
+}
+
+/* Новогодний баннер */
+.new-year-banner {
+    background: linear-gradient(135deg, #d32f2f 0%, #1976d2 100%);
+    color: white;
+    padding: 8px 15px;
+    border-radius: 8px;
+    margin: 10px 0 15px 0;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border: 2px solid #ffd700;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    animation: bannerPulse 4s ease-in-out infinite;
+    -webkit-animation: bannerPulse 4s ease-in-out infinite;
+}
+
+@keyframes bannerPulse {
+    0%, 100% { 
+        box-shadow: 0 0 0 0 rgba(255, 215, 0, 0.4);
+    }
+    50% { 
+        box-shadow: 0 0 0 10px rgba(255, 215, 0, 0);
+    }
+}
+
+@-webkit-keyframes bannerPulse {
+    0%, 100% { 
+        box-shadow: 0 0 0 0 rgba(255, 215, 0, 0.4);
+    }
+    50% { 
+        box-shadow: 0 0 0 10px rgba(255, 215, 0, 0);
+    }
+}
+
+/* Новогодняя кнопка */
+.btn-holiday {
+    background: linear-gradient(135deg, #d32f2f 0%, #c2185b 100%);
+    color: white !important;
+    border: none;
+    position: relative;
+    overflow: hidden;
+}
+
+.btn-holiday::before {
+    content: "❄️";
+    position: absolute;
+    top: -10px;
+    left: -10px;
+    font-size: 20px;
+    opacity: 0.5;
+    pointer-events: none;
+    animation: snowFall 3s linear infinite;
+    -webkit-animation: snowFall 3s linear infinite;
+}
+
+@keyframes snowFall {
+    0% { 
+        transform: translateY(-10px) rotate(0deg);
+        -webkit-transform: translateY(-10px) rotate(0deg);
+    }
+    100% { 
+        transform: translateY(100px) rotate(360deg);
+        -webkit-transform: translateY(100px) rotate(360deg);
+    }
+}
+
+@-webkit-keyframes snowFall {
+    0% { 
+        transform: translateY(-10px) rotate(0deg);
+        -webkit-transform: translateY(-10px) rotate(0deg);
+    }
+    100% { 
+        transform: translateY(100px) rotate(360deg);
+        -webkit-transform: translateY(100px) rotate(360deg);
+    }
+}
+
+/* Новогодняя рамка для карточек */
+.holiday-card {
+    border: 2px solid transparent;
+    background: linear-gradient(white, white) padding-box,
+                linear-gradient(45deg, #d32f2f, #1976d2, #388e3c) border-box;
+    position: relative;
+}
+
+.holiday-card::before {
+    content: "⭐";
+    position: absolute;
+    top: -10px;
+    right: -10px;
+    font-size: 16px;
+    pointer-events: none;
+    animation: starTwinkle 2s ease-in-out infinite;
+    -webkit-animation: starTwinkle 2s ease-in-out infinite;
+}
+
+@keyframes starTwinkle {
+    0%, 100% { 
+        opacity: 1; 
+        transform: scale(1);
+        -webkit-transform: scale(1);
+    }
+    50% { 
+        opacity: 0.5; 
+        transform: scale(0.9);
+        -webkit-transform: scale(0.9);
+    }
+}
+
+@-webkit-keyframes starTwinkle {
+    0%, 100% { 
+        opacity: 1; 
+        transform: scale(1);
+        -webkit-transform: scale(1);
+    }
+    50% { 
+        opacity: 0.5; 
+        transform: scale(0.9);
+        -webkit-transform: scale(0.9);
+    }
+}
+
+/* ================= СТАНДАРТНЫЕ СТИЛИ ТРЕНАЖЕРА ================= */
 .header {
     background: linear-gradient(135deg, #10a37f 0%, #0d8c6c 100%);
     color: white;
@@ -919,12 +1199,6 @@ body {
     margin-top: 10px;
 }
 
-@media (max-width: 768px) {
-    .confidentiality-list {
-        grid-template-columns: 1fr;
-    }
-}
-
 .confidentiality-list .prohibited {
     background: #f8f9fa;
     padding: 8px;
@@ -1272,11 +1546,64 @@ body {
     color: #1976d2;
 }
 
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(-5px); }
-    to { opacity: 1; transform: translateY(0); }
+/* Стили для бейджа с лимитом тренировок */
+.limit-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    background: #e9ecef;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #666;
+    cursor: help;
+    border: 1px solid #ddd;
+    transition: all 0.3s;
+    margin-left: 10px;
 }
 
+.limit-badge.warning {
+    background: #fff3cd;
+    color: #856404;
+    border-color: #ffeaa7;
+}
+
+.limit-badge.danger {
+    background: #f8d7da;
+    color: #721c24;
+    border-color: #f5c6cb;
+}
+
+.limit-badge:hover {
+    transform: scale(1.05);
+}
+
+@keyframes fadeIn {
+    from { 
+        opacity: 0; 
+        transform: translateY(-5px);
+        -webkit-transform: translateY(-5px);
+    }
+    to { 
+        opacity: 1; 
+        transform: translateY(0);
+        -webkit-transform: translateY(0);
+    }
+}
+
+@-webkit-keyframes fadeIn {
+    from { 
+        opacity: 0; 
+        transform: translateY(-5px);
+        -webkit-transform: translateY(-5px);
+    }
+    to { 
+        opacity: 1; 
+        transform: translateY(0);
+        -webkit-transform: translateY(0);
+    }
+}
+
+/* ================= АДАПТИВНОСТЬ ================= */
 @media (max-width: 1024px) {
     .training-container {
         flex-direction: column;
@@ -1334,195 +1661,57 @@ body {
     .client-type-option.random {
         grid-column: span 1;
     }
-}
-
-/* Стили для бейджа с лимитом тренировок */
-.limit-badge {
-    display: inline-block;
-    padding: 2px 8px;
-    background: #e9ecef;
-    border-radius: 12px;
-    font-size: 11px;
-    font-weight: 600;
-    color: #666;
-    cursor: help;
-    border: 1px solid #ddd;
-    transition: all 0.3s;
-    margin-left: 10px;
-}
-
-.limit-badge.warning {
-    background: #fff3cd;
-    color: #856404;
-    border-color: #ffeaa7;
-}
-
-.limit-badge.danger {
-    background: #f8d7da;
-    color: #721c24;
-    border-color: #f5c6cb;
-}
-
-.limit-badge:hover {
-    transform: scale(1.05);
-
-/* ================= НОВОГОДНЕЕ ОФОРМЛЕНИЕ ================= */
-.new-year-decoration {
-    position: relative;
-    overflow: hidden;
-}
-
-.new-year-decoration::before {
-    content: "🎄";
-    position: absolute;
-    top: 15px;
-    left: 15px;
-    font-size: 32px;
-    z-index: 1;
-    animation: floatTree 6s ease-in-out infinite;
-}
-
-.new-year-decoration::after {
-    content: "";
-    position: absolute;
-    top: 0;
-    right: 0;
-    width: 40px;
-    height: 40px;
-    background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%2310a37f"><path d="M12 2L9 8H2L7 13L4 20L12 16L20 20L17 13L22 8H15L12 2Z"/></svg>');
-    background-size: contain;
-    opacity: 0.7;
-    animation: snowflakeSpin 8s linear infinite;
-}
-
-.new-year-decoration .header {
-    position: relative;
-    z-index: 2;
-}
-
-@keyframes floatTree {
-    0%, 100% { transform: translateY(0) rotate(0deg); }
-    50% { transform: translateY(-5px) rotate(2deg); }
-}
-
-@keyframes snowflakeSpin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-}
-
-/* Снежинки в углах */
-.container {
-    position: relative;
-}
-
-.snowflake-corner {
-    position: absolute;
-    font-size: 20px;
-    opacity: 0.6;
-    animation: snowflakeFloat 10s linear infinite;
-    z-index: 0;
-}
-
-.snowflake-corner:nth-child(1) {
-    top: 10px;
-    right: 10px;
-    animation-delay: 0s;
-}
-
-.snowflake-corner:nth-child(2) {
-    bottom: 10px;
-    left: 10px;
-    animation-delay: 3s;
-}
-
-.snowflake-corner:nth-child(3) {
-    top: 50%;
-    left: 10px;
-    animation-delay: 6s;
-}
-
-.snowflake-corner:nth-child(4) {
-    top: 10px;
-    right: 50%;
-    animation-delay: 9s;
-}
-
-@keyframes snowflakeFloat {
-    0%, 100% { 
-        transform: translateY(0) scale(1);
-        opacity: 0.6;
+    
+    .confidentiality-list {
+        grid-template-columns: 1fr;
     }
-    50% { 
-        transform: translateY(-10px) scale(1.1);
-        opacity: 1;
+    
+    /* Уменьшаем новогодний декор на мобильных */
+    .new-year-decoration::before {
+        font-size: 22px;
+        top: 10px;
+        left: 10px;
+    }
+    
+    .new-year-decoration::after {
+        width: 28px;
+        height: 28px;
+    }
+    
+    .snowflake-corner {
+        font-size: 16px;
     }
 }
 
-/* Новогодний баннер */
-.new-year-banner {
-    background: linear-gradient(135deg, #d32f2f 0%, #1976d2 100%);
-    color: white;
-    padding: 8px 15px;
-    border-radius: 8px;
-    margin: 10px 0 15px 0;
-    text-align: center;
-    font-size: 13px;
-    font-weight: 600;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    animation: bannerPulse 4s ease-in-out infinite;
-    border: 2px solid #ffd700;
+/* ================= ДОСТУПНОСТЬ: УМЕНЬШЕНИЕ ДВИЖЕНИЯ ================= */
+@media (prefers-reduced-motion: reduce) {
+    .new-year-decoration::before,
+    .new-year-decoration::after,
+    .snowflake-corner,
+    .btn-holiday::before,
+    .new-year-banner,
+    .holiday-card::before {
+        animation: none !important;
+        -webkit-animation: none !important;
+    }
+    
+    .btn-holiday:hover,
+    .limit-badge:hover,
+    .client-type-badge:hover,
+    .client-type-option:hover {
+        transform: none !important;
+        -webkit-transform: none !important;
+    }
 }
 
-@keyframes bannerPulse {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(255, 215, 0, 0.4); }
-    50% { box-shadow: 0 0 0 10px rgba(255, 215, 0, 0); }
-}
-
-/* Новогодняя кнопка */
-.btn-holiday {
-    background: linear-gradient(135deg, #d32f2f 0%, #c2185b 100%);
-    color: white !important;
-    border: none;
-    position: relative;
-    overflow: hidden;
-}
-
-.btn-holiday::before {
-    content: "❄️";
-    position: absolute;
-    top: -10px;
-    left: -10px;
-    font-size: 20px;
-    opacity: 0.5;
-    animation: snowFall 3s linear infinite;
-}
-
-@keyframes snowFall {
-    0% { transform: translateY(-10px) rotate(0deg); }
-    100% { transform: translateY(100px) rotate(360deg); }
-}
-
-/* Новогодняя рамка для карточек */
-.holiday-card {
-    border: 2px solid transparent;
-    background: linear-gradient(white, white) padding-box,
-                linear-gradient(45deg, #d32f2f, #1976d2, #388e3c) border-box;
-    position: relative;
-}
-
-.holiday-card::before {
-    content: "⭐";
-    position: absolute;
-    top: -10px;
-    right: -10px;
-    font-size: 16px;
-    animation: starTwinkle 2s ease-in-out infinite;
-}
-
-@keyframes starTwinkle {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.5; transform: scale(0.9); }
+/* ================= ТЕМНАЯ ТЕМА (опционально) ================= */
+@media (prefers-color-scheme: dark) {
+    .container:not(.new-year-theme) {
+        background: #1a1a1a;
+        color: #ffffff;
+    }
+    
+    .new-year-banner {
+        text-shadow: 0 1px 2px rgba(0,0,0,0.7);
+    }
 }

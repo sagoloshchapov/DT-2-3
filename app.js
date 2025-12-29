@@ -1,3 +1,5 @@
+[file name]: app.js
+[file content begin]
 const SUPABASE_URL = 'https://lpoaqliycyuhvdrwuyxj.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_uxkhuA-ngwjNjfaZdHCs7Q_FXOQRrSD';
 const EDGE_FUNCTION_URL = 'https://lpoaqliycyuhvdrwuyxj.supabase.co/functions/v1/rapid-handler';
@@ -514,19 +516,19 @@ async getSystemStats() {
         const headerSubtitle = document.getElementById('headerSubtitle');
         
         if (this.userRole === 'trainer') {
-            headerTitle.innerHTML = '🎓 Панель тренера';
+            headerTitle.innerHTML = '🎅 Панель тренера';
             headerSubtitle.textContent = `Тренер: ${this.currentUser.username}`;
         } else {
-            headerTitle.innerHTML = '💬 Диалоговый тренажер';
-            headerSubtitle.textContent = 'Отработка диалогов с негативными сценариями';
+            headerTitle.innerHTML = '🎄 Диалоговый тренажер';
+            headerSubtitle.textContent = 'Новогодняя тренировка работы с клиентами 🎁';
         }
         
         document.getElementById('currentUserName').textContent = this.currentUser.username;
         const groupBadge = document.getElementById('userGroupBadge');
         
         if (this.userRole === 'trainer') {
-            groupBadge.textContent = 'Тренер';
-            groupBadge.style.backgroundColor = '#667eea';
+            groupBadge.textContent = '🎅 Тренер';
+            groupBadge.style.backgroundColor = '#155d27';
             groupBadge.style.color = 'white';
         } else if (this.currentUser.group) {
             groupBadge.textContent = this.currentUser.group;
@@ -884,7 +886,7 @@ function loadStudentInterface() {
             <div class="welcome-section">
                 <div class="section-title">
                     <i class="fas fa-bullhorn"></i>
-                    <span>Добро пожаловать в тренажер!</span>
+                    <span>Добро пожаловать в новогодний тренажер! 🎄</span>
                 </div>
                 
                 <div class="confidentiality-warning">
@@ -912,7 +914,7 @@ function loadStudentInterface() {
                 <div class="news-section" id="newsSection">
                     <div class="news-title">
                         <i class="fas fa-newspaper"></i>
-                        <span>Последние новости тренажера</span>
+                        <span>Новогодние новости тренажера 🎅</span>
                     </div>
                     <div class="news-grid" id="newsGrid"></div>
                 </div>
@@ -962,7 +964,7 @@ function loadStudentInterface() {
                 </div>
                 
                 <div class="action-buttons">
-                    <button class="btn btn-primary" onclick="switchTab('training')">
+                    <button class="btn btn-primary btn-newyear" onclick="switchTab('training')">
                         <i class="fas fa-play-circle"></i> Начать тренировку
                     </button>
                 </div>
@@ -1013,12 +1015,12 @@ function loadStudentInterface() {
                         </div>
                         
                         <div class="action-buttons" id="actionButtons">
-                            <button class="btn btn-primary" id="startTrainingBtn" onclick="startTraining()" disabled>
-                                <span>🚀</span>
+                            <button class="btn btn-primary btn-newyear" id="startTrainingBtn" onclick="startTraining()" disabled>
+                                <span>🎄</span>
                                 Начать тренировку
                             </button>
                             <button class="btn btn-secondary" id="endTrainingBtn" onclick="finishChat()">
-                            <span>🏁</span>
+                            <span>🎁</span>
                             Завершить тренировку
                             </button>
                             <div class="training-timer" id="trainingTimer"></div>
@@ -1028,13 +1030,13 @@ function loadStudentInterface() {
 
                 <div class="chat-section">
                     <div class="chat-header">
-                        <div class="chat-title">💬 Тренировочный чат</div>
+                        <div class="chat-title">💬 Новогодний тренировочный чат</div>
                         <div class="chat-status" id="chatStatus">Ожидание начала</div>
                     </div>
                     
                     <div class="chat-messages" id="chatMessages">
                         <div class="message ai">
-                            Привет! Я готов к тренировке. Выберите тип клиента, чтобы начать тренировку.
+                            Привет! 🎅 Я готов к тренировке. Выберите тип клиента, чтобы начать тренировку.
                         </div>
                     </div>
                     
@@ -1048,7 +1050,7 @@ function loadStudentInterface() {
                                 onkeydown="handleChatInput(event)"
                                 disabled
                             ></textarea>
-                            <button class="send-btn" id="sendBtn" onclick="sendMessage()" disabled>
+                            <button class="send-btn btn-newyear" id="sendBtn" onclick="sendMessage()" disabled>
                                 Отправить
                             </button>
                         </div>
@@ -1195,52 +1197,6 @@ function selectRandomClientType() {
     selectClientType(randomType);
 }
 
-async function sendPromptToAI() {
-    try {
-        const systemMessage = {
-            role: "system",
-            content: currentPrompt || `Ты играешь роль клиента...` // (остальной промт)
-        };
-        
-        const messageHistory = chatMessages.map(msg => ({
-            role: msg.sender === 'user' ? 'user' : 'assistant',
-            content: msg.text
-        }));
-        
-        const messages = [systemMessage, ...messageHistory];
-        
-        const response = await fetch('https://lpoaqliycyuhvdrwuyxj.supabase.co/functions/v1/rapid-handler', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer sb_publishable_uxkhuA-ngwjNjfaZdHCs7Q_FXOQRrSD'
-            },
-            body: JSON.stringify({
-                messages: messages,
-                model: 'deepseek-chat',
-                max_tokens: 500
-            })
-        });
-        
-        if (!response.ok) throw new Error('Ошибка соединения');
-        
-        const data = await response.json();
-        
-        if (data.choices && data.choices[0] && data.choices[0].message) {
-            const aiResponse = data.choices[0].message.content;
-            addMessage('ai', aiResponse);
-            
-            if (aiResponse.includes('ОЦЕНКА:')) {
-                checkForEvaluationInResponse(aiResponse);
-            }
-        }
-    } catch (error) {
-        console.error('Ошибка:', error);
-        addMessage('ai', '⚠️ Ошибка соединения');
-        resetTrainingState();
-    }
-}
-
 async function startTraining() {
     if (!auth.currentUser) {
         alert('Сначала войдите в систему!');
@@ -1286,7 +1242,7 @@ async function startTraining() {
     chatMessagesDiv.innerHTML = '';
     
     const clientType = clientTypes[selectedClientType];
-    const initialMessage = `Тренировка началась! Вы работаете с ${clientType.name.toLowerCase()} в вертикали "${auth.currentUser.group}".`;
+    const initialMessage = `🎄 Тренировка началась! Вы работаете с ${clientType.name.toLowerCase()} в вертикали "${auth.currentUser.group}".`;
     addMessage('ai', initialMessage);
     
     await sendPromptToAI();
@@ -1353,9 +1309,9 @@ function endTraining() {
         lastAIFeedback
     ).then(result => {
         showResultModal(
-            `Тренировка завершена!`,
+            `🎉 Тренировка завершена!`,
             `${clientType.name} (${auth.currentUser.group})`,
-            evaluation.score >= 4 ? "⭐" : "📝",
+            evaluation.score >= 4 ? "🎁" : "📝",
             result.xp,
             evaluation,
             duration,
@@ -1405,7 +1361,6 @@ function sendMessage() {
     if (!message || !trainingInProgress) return;
     
     addMessage('user', message);
-    
     
     input.value = '';
     input.style.height = 'auto';
@@ -1498,13 +1453,13 @@ function evaluateDialogue(messages, clientType) {
     let feedback = "";
     
     if (roundedScore >= 4.5) {
-        feedback = "Отличная работа! Вы профессионально справились с клиентом.";
+        feedback = "🎅 Отличная работа! Вы профессионально справились с клиентом.";
     } else if (roundedScore >= 4.0) {
-        feedback = "Хорошая работа! Вы хорошо адаптировались к типу клиента.";
+        feedback = "✨ Хорошая работа! Вы хорошо адаптировались к типу клиента.";
     } else if (roundedScore >= 3.0) {
-        feedback = "Неплохо! Есть потенциал для улучшения.";
+        feedback = "🌟 Неплохо! Есть потенциал для улучшения.";
     } else {
-        feedback = "Попробуйте быть более активным и внимательным к клиенту.";
+        feedback = "🎯 Попробуйте быть более активным и внимательным к клиенту.";
     }
     
     return {
@@ -1725,9 +1680,9 @@ function checkForEvaluationInResponse(response) {
                 awardXP(foundScore, clientTypes[selectedClientType]?.description || '', selectedClientType, evaluation.feedback, duration, lastAIFeedback)
                     .then(result => {
                         showResultModal(
-                            `Тренировка завершена!`,
+                            `🎉 Тренировка завершена!`,
                             `Клиент оценил вашу работу на ${foundScore}/5`,
-                            foundScore >= 4 ? "⭐" : "📝",
+                            foundScore >= 4 ? "🎁" : "📝",
                             result.xp,
                             evaluation,
                             duration,
@@ -2048,9 +2003,9 @@ async function renderDynamicNews() {
                     <i class="far fa-calendar"></i> ${formatDate(new Date())}
                 </div>
                 <div class="news-content">
-                    <strong>Добро пожаловать в тренажер!</strong>
-                    <p style="margin-top: 5px;">Начните тренировки для улучшения навыков работы с клиентами.</p>
-                    <span class="news-tag">НОВОСТИ</span>
+                    <strong>🎅 С Новым Годом в тренажере!</strong>
+                    <p style="margin-top: 5px;">Начните тренировки для улучшения навыков работы с клиентами. Новогодние скидки на достижения!</p>
+                    <span class="news-tag">ПРАЗДНИК</span>
                 </div>
             </div>
         `;
@@ -2474,8 +2429,8 @@ function renderProgressChart() {
                 {
                     label: 'Количество тренировок',
                     data: sessionsData,
-                    backgroundColor: 'rgba(16, 163, 127, 0.7)',
-                    borderColor: '#10a37f',
+                    backgroundColor: 'rgba(21, 93, 39, 0.7)',
+                    borderColor: '#155d27',
                     borderWidth: 1,
                     yAxisID: 'y'
                 },
@@ -2707,7 +2662,7 @@ function loadDemoChat() {
     
     chatMessagesDiv.innerHTML = `
         <div class="message ai">
-            Привет! Я готов к тренировке. Выберите тип клиента, чтобы начать тренировку.
+            Привет! 🎅 Я готов к тренировке. Выберите тип клиента, чтобы начать тренировку.
         </div>
     `;
 }
@@ -2756,7 +2711,7 @@ function loadTrainerInterface() {
             <div class="welcome-section">
                 <div class="section-title">
                     <i class="fas fa-chalkboard-teacher"></i>
-                    <span>Панель тренера</span>
+                    <span>Панель тренера 🎅</span>
                 </div>
                 <div id="trainerDashboardContent">
                     <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
@@ -2772,6 +2727,16 @@ function loadTrainerInterface() {
                     <i class="fas fa-users"></i>
                     <span>Все ученики</span>
                 </div>
+                
+                <div class="trainer-search-section">
+                    <input type="text" class="trainer-search-input" id="studentSearchInput" placeholder="Поиск по имени ученика..." oninput="searchStudents()">
+                    <input type="date" class="trainer-date-input" id="studentDateFrom" placeholder="Дата от">
+                    <input type="date" class="trainer-date-input" id="studentDateTo" placeholder="Дата до">
+                    <button class="trainer-search-btn" onclick="searchStudents()">
+                        <i class="fas fa-search"></i> Поиск
+                    </button>
+                </div>
+                
                 <div id="trainerStudentsContent">
                     <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
                         Загрузка списка учеников...
@@ -2797,6 +2762,22 @@ function loadTrainerInterface() {
                         </select>
                     </div>
                 </div>
+                
+                <div class="trainer-search-section">
+                    <input type="text" class="trainer-search-input" id="sessionSearchInput" placeholder="Поиск по ученику или сценарию..." oninput="searchSessions()">
+                    <input type="date" class="trainer-date-input" id="sessionDateFrom" placeholder="Дата от">
+                    <input type="date" class="trainer-date-input" id="sessionDateTo" placeholder="Дата до">
+                    <select class="trainer-date-input" id="sessionScoreFilter" onchange="searchSessions()" style="min-width: 120px;">
+                        <option value="">Все оценки</option>
+                        <option value="5">5 звезд</option>
+                        <option value="4">4+ звезды</option>
+                        <option value="3">3+ звезды</option>
+                    </select>
+                    <button class="trainer-search-btn" onclick="searchSessions()">
+                        <i class="fas fa-search"></i> Поиск
+                    </button>
+                </div>
+                
                 <div id="trainerSessionsContent">
                     <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
                         Загрузка всех тренировок...
@@ -2911,6 +2892,7 @@ async function loadAllStudents() {
             <div class="section-title" style="margin-top: 25px;">
                 <i class="fas fa-users"></i>
                 <span>Все ученики</span>
+                <span style="font-size: 12px; color: #666; margin-left: 10px;">Нажмите на вертикаль, чтобы свернуть/развернуть</span>
             </div>
         `;
         
@@ -2925,12 +2907,18 @@ async function loadAllStudents() {
             });
             
             for (const [group, groupStudents] of Object.entries(studentsByGroup)) {
+                const groupId = `group_${group.replace(/\s+/g, '_')}`;
                 html += `
-                    <div class="section-title" style="margin-top: 20px;">
-                        <i class="fas fa-building"></i>
-                        <span>${group}</span>
-                        <span style="font-size: 14px; color: #666; margin-left: 10px;">(${groupStudents.length} учеников)</span>
-                    </div>
+                    <div class="vertical-group" id="${groupId}">
+                        <div class="vertical-header" onclick="toggleVerticalGroup('${groupId}')">
+                            <div>
+                                <i class="fas fa-building"></i>
+                                <span>${group}</span>
+                                <span class="vertical-count">${groupStudents.length}</span>
+                            </div>
+                            <div class="toggle-icon">▼</div>
+                        </div>
+                        <div class="vertical-content" id="${groupId}_content">
                 `;
                 
                 groupStudents.forEach(student => {
@@ -2957,6 +2945,11 @@ async function loadAllStudents() {
                         </div>
                     `;
                 });
+                
+                html += `
+                        </div>
+                    </div>
+                `;
             }
         } else {
             html += '<div style="text-align: center; padding: 20px; color: #666;">Нет учеников в системе</div>';
@@ -2964,17 +2957,190 @@ async function loadAllStudents() {
         
         studentsContent.innerHTML = html;
         
+        // По умолчанию разворачиваем первую группу
+        const firstGroup = Object.keys(studentsByGroup)[0];
+        if (firstGroup) {
+            toggleVerticalGroup(`group_${firstGroup.replace(/\s+/g, '_')}`, true);
+        }
+        
     } catch (error) {
         console.error('Ошибка загрузки учеников:', error);
         studentsContent.innerHTML = '<p style="color: #dc3545;">Ошибка загрузки данных</p>';
     }
 }
 
-async function loadAllSessions() {
+// Новая функция для сворачивания/разворачивания групп вертикалей
+function toggleVerticalGroup(groupId, forceExpand = false) {
+    const groupContent = document.getElementById(`${groupId}_content`);
+    const toggleIcon = document.querySelector(`#${groupId} .toggle-icon`);
+    
+    if (!groupContent || !toggleIcon) return;
+    
+    if (forceExpand || groupContent.classList.contains('expanded')) {
+        groupContent.classList.remove('expanded');
+        toggleIcon.classList.remove('expanded');
+        toggleIcon.innerHTML = '▼';
+    } else {
+        groupContent.classList.add('expanded');
+        toggleIcon.classList.add('expanded');
+        toggleIcon.innerHTML = '▲';
+    }
+}
+
+// Новая функция поиска учеников
+async function searchStudents() {
+    const searchInput = document.getElementById('studentSearchInput');
+    const dateFrom = document.getElementById('studentDateFrom');
+    const dateTo = document.getElementById('studentDateTo');
+    
+    if (!searchInput) return;
+    
+    const searchTerm = searchInput.value.toLowerCase().trim();
+    
+    // Показываем индикатор загрузки
+    const studentsContent = document.getElementById('trainerStudentsContent');
+    if (!studentsContent) return;
+    
+    studentsContent.innerHTML = '<p style="color: #666; margin-bottom: 15px; font-size: 14px;">Поиск учеников...</p>';
+    
+    try {
+        const students = await auth.getStudents();
+        const allSessions = await auth.supabaseRequest('training_sessions?select=*');
+        
+        let filteredStudents = students;
+        
+        // Фильтрация по поисковому запросу
+        if (searchTerm) {
+            filteredStudents = students.filter(student => 
+                student.username.toLowerCase().includes(searchTerm) ||
+                (student.group_name && student.group_name.toLowerCase().includes(searchTerm))
+            );
+        }
+        
+        // Фильтрация по дате регистрации
+        if (dateFrom.value || dateTo.value) {
+            filteredStudents = filteredStudents.filter(student => {
+                if (!student.stats) return true;
+                
+                try {
+                    const stats = typeof student.stats === 'string' ? 
+                        JSON.parse(student.stats) : student.stats;
+                    
+                    if (!stats.registrationDate) return true;
+                    
+                    const regDate = new Date(stats.registrationDate);
+                    const fromDate = dateFrom.value ? new Date(dateFrom.value) : null;
+                    const toDate = dateTo.value ? new Date(dateTo.value) : null;
+                    
+                    if (fromDate && regDate < fromDate) return false;
+                    if (toDate && regDate > toDate) return false;
+                    
+                    return true;
+                } catch (e) {
+                    return true;
+                }
+            });
+        }
+        
+        // Группировка по вертикалям
+        const studentsByGroup = {};
+        filteredStudents.forEach(student => {
+            const group = student.group_name || 'Без вертикали';
+            if (!studentsByGroup[group]) {
+                studentsByGroup[group] = [];
+            }
+            studentsByGroup[group].push(student);
+        });
+        
+        let html = `
+            <div class="stats-cards">
+                <div class="stat-card">
+                    <div class="value">${filteredStudents.length}</div>
+                    <div class="label">Найдено учеников</div>
+                </div>
+            </div>
+            
+            <div class="section-title" style="margin-top: 25px;">
+                <i class="fas fa-users"></i>
+                <span>Результаты поиска</span>
+                ${searchTerm ? `<span style="font-size: 12px; color: #666; margin-left: 10px;">По запросу: "${searchTerm}"</span>` : ''}
+            </div>
+        `;
+        
+        if (filteredStudents.length > 0) {
+            for (const [group, groupStudents] of Object.entries(studentsByGroup)) {
+                const groupId = `group_${group.replace(/\s+/g, '_')}_search`;
+                html += `
+                    <div class="vertical-group" id="${groupId}">
+                        <div class="vertical-header" onclick="toggleVerticalGroup('${groupId}')">
+                            <div>
+                                <i class="fas fa-building"></i>
+                                <span>${group}</span>
+                                <span class="vertical-count">${groupStudents.length}</span>
+                            </div>
+                            <div class="toggle-icon">▼</div>
+                        </div>
+                        <div class="vertical-content" id="${groupId}_content">
+                `;
+                
+                groupStudents.forEach(student => {
+                    const studentSessions = allSessions?.filter(s => s.user_id === student.id) || [];
+                    const totalScore = studentSessions.reduce((sum, s) => sum + (s.score || 0), 0);
+                    const avgScore = studentSessions.length > 0 ? (totalScore / studentSessions.length).toFixed(1) : '0.0';
+                    
+                    html += `
+                        <div class="student-item">
+                            <div class="student-info">
+                                <div class="student-name">${student.username}</div>
+                                <div class="student-group">${student.group_name || 'Без вертикали'}</div>
+                            </div>
+                            <div class="student-stats">
+                                <div class="stat-badge">${studentSessions.length} тренировок</div>
+                                <div class="stat-badge">Средний: ${avgScore}/5</div>
+                                <div class="stat-badge">Уровень: ${student.stats?.currentLevel || 1}</div>
+                            </div>
+                            <div class="trainer-actions">
+                                <button class="view-chat-btn-trainer" onclick="viewStudentSessions('${student.id}', '${student.username}')">
+                                    <i class="fas fa-history"></i> Тренировки
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                html += `
+                        </div>
+                    </div>
+                `;
+            }
+        } else {
+            html += '<div style="text-align: center; padding: 20px; color: #666;">По вашему запросу ничего не найдено</div>';
+        }
+        
+        studentsContent.innerHTML = html;
+        
+    } catch (error) {
+        console.error('Ошибка поиска учеников:', error);
+        studentsContent.innerHTML = '<p style="color: #dc3545;">Ошибка поиска</p>';
+    }
+}
+
+// Новая функция поиска тренировок
+async function searchSessions() {
+    const searchInput = document.getElementById('sessionSearchInput');
+    const dateFrom = document.getElementById('sessionDateFrom');
+    const dateTo = document.getElementById('sessionDateTo');
+    const scoreFilter = document.getElementById('sessionScoreFilter');
+    
+    if (!searchInput) return;
+    
+    const searchTerm = searchInput.value.toLowerCase().trim();
+    const minScore = scoreFilter.value ? parseInt(scoreFilter.value) : 0;
+    
     const sessionsContent = document.getElementById('trainerSessionsContent');
     if (!sessionsContent) return;
     
-    sessionsContent.innerHTML = '<p style="color: #666; margin-bottom: 15px; font-size: 14px;">Загрузка всех тренировок...</p>';
+    sessionsContent.innerHTML = '<p style="color: #666; margin-bottom: 15px; font-size: 14px;">Поиск тренировок...</p>';
     
     try {
         const students = await auth.getStudents();
@@ -2987,135 +3153,149 @@ async function loadAllSessions() {
             allSessions = allSessions.filter(session => session.vertical === filterValue);
         }
         
+        // Фильтрация по поисковому запросу
+        let filteredSessions = allSessions || [];
+        
+        if (searchTerm) {
+            filteredSessions = filteredSessions.filter(session => {
+                const student = students.find(s => s.id === session.user_id);
+                const studentName = student ? student.username.toLowerCase() : '';
+                const scenario = session.scenario ? session.scenario.toLowerCase() : '';
+                const clientType = session.client_type ? session.client_type.toLowerCase() : '';
+                
+                return studentName.includes(searchTerm) ||
+                       scenario.includes(searchTerm) ||
+                       clientType.includes(searchTerm);
+            });
+        }
+        
+        // Фильтрация по дате
+        if (dateFrom.value || dateTo.value) {
+            filteredSessions = filteredSessions.filter(session => {
+                if (!session.date) return false;
+                
+                const sessionDate = new Date(session.date);
+                const fromDate = dateFrom.value ? new Date(dateFrom.value) : null;
+                const toDate = dateTo.value ? new Date(dateTo.value) : null;
+                
+                if (fromDate && sessionDate < fromDate) return false;
+                if (toDate && sessionDate > toDate) return false;
+                
+                return true;
+            });
+        }
+        
+        // Фильтрация по оценке
+        if (minScore > 0) {
+            filteredSessions = filteredSessions.filter(session => 
+                session.score && session.score >= minScore
+            );
+        }
+        
         let html = `
             <div class="stats-cards">
                 <div class="stat-card">
-                    <div class="value">${allSessions?.length || 0}</div>
-                    <div class="label">Всего тренировок</div>
+                    <div class="value">${filteredSessions.length}</div>
+                    <div class="label">Найдено тренировок</div>
                 </div>
             </div>
             
             <div class="section-title" style="margin-top: 25px;">
                 <i class="fas fa-history"></i>
-                <span>Все тренировки</span>
+                <span>Результаты поиска тренировок</span>
+                ${searchTerm ? `<span style="font-size: 12px; color: #666; margin-left: 10px;">По запросу: "${searchTerm}"</span>` : ''}
             </div>
         `;
         
-        if (allSessions && allSessions.length > 0) {
-            allSessions.forEach(session => {
-                const student = students.find(s => s.id === session.user_id);
-                const clientType = clientTypes[session.client_type];
+        if (filteredSessions.length > 0) {
+            // Группировка по датам
+            const sessionsByDate = {};
+            filteredSessions.forEach(session => {
+                const date = new Date(session.date).toLocaleDateString('ru-RU');
+                if (!sessionsByDate[date]) {
+                    sessionsByDate[date] = [];
+                }
+                sessionsByDate[date].push(session);
+            });
+            
+            for (const [date, dateSessions] of Object.entries(sessionsByDate)) {
+                const dateId = `date_${date.replace(/[\.\s]/g, '_')}`;
+                html += `
+                    <div class="vertical-group" id="${dateId}">
+                        <div class="vertical-header" onclick="toggleVerticalGroup('${dateId}')">
+                            <div>
+                                <i class="far fa-calendar"></i>
+                                <span>${date}</span>
+                                <span class="vertical-count">${dateSessions.length}</span>
+                            </div>
+                            <div class="toggle-icon">▼</div>
+                        </div>
+                        <div class="vertical-content" id="${dateId}_content">
+                `;
+                
+                dateSessions.forEach(session => {
+                    const student = students.find(s => s.id === session.user_id);
+                    const clientType = clientTypes[session.client_type];
+                    
+                    html += `
+                        <div class="student-item">
+                            <div class="student-info">
+                                <div class="student-name">${student ? student.username : 'Неизвестный ученик'}</div>
+                                <div class="student-group">${session.vertical || 'Без вертикали'} • ${clientType ? clientType.name : session.client_type}</div>
+                                <div style="margin-top: 5px; font-size: 12px; color: #666;">${session.scenario || 'Тренировка'}</div>
+                            </div>
+                            <div class="student-stats">
+                                <div class="stat-badge">${session.score}/5</div>
+                                <div class="stat-badge">${formatTime(session.date)}</div>
+                            </div>
+                            <div class="trainer-actions">
+                                <button class="view-chat-btn-trainer" onclick="viewStudentChat('${session.user_id}', '${session.id}')">
+                                    <i class="fas fa-comments"></i> Чат
+                                </button>
+                                <button class="comment-btn" onclick="openCommentModal('${session.user_id}', '${session.id}', '${student ? student.username : 'Неизвестный'}')">
+                                    <i class="fas fa-comment"></i> Комментарий
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                });
                 
                 html += `
-                    <div class="student-item">
-                        <div class="student-info">
-                            <div class="student-name">${student ? student.username : 'Неизвестный ученик'}</div>
-                            <div class="student-group">${session.vertical || 'Без вертикали'} • ${clientType ? clientType.name : session.client_type}</div>
-                            <div style="margin-top: 5px; font-size: 12px; color: #666;">${session.scenario || 'Тренировка'}</div>
-                        </div>
-                        <div class="student-stats">
-                            <div class="stat-badge">${session.score}/5</div>
-                            <div class="stat-badge">${formatDate(session.date)}</div>
-                        </div>
-                        <div class="trainer-actions">
-                            <button class="view-chat-btn-trainer" onclick="viewStudentChat('${session.user_id}', '${session.id}')">
-                                <i class="fas fa-comments"></i> Чат
-                            </button>
-                            <button class="comment-btn" onclick="openCommentModal('${session.user_id}', '${session.id}', '${student ? student.username : 'Неизвестный'}')">
-                                <i class="fas fa-comment"></i> Комментарий
-                            </button>
                         </div>
                     </div>
                 `;
-            });
+            }
         } else {
-            html += '<div style="text-align: center; padding: 20px; color: #666;">Нет данных о тренировках</div>';
+            html += '<div style="text-align: center; padding: 20px; color: #666;">По вашему запросу ничего не найдено</div>';
         }
         
         sessionsContent.innerHTML = html;
         
+        // Разворачиваем первую дату
+        const firstDate = Object.keys(sessionsByDate)[0];
+        if (firstDate) {
+            const dateId = `date_${firstDate.replace(/[\.\s]/g, '_')}`;
+            toggleVerticalGroup(dateId, true);
+        }
+        
     } catch (error) {
-        console.error('Ошибка загрузки тренировок:', error);
-        sessionsContent.innerHTML = '<p style="color: #dc3545;">Ошибка загрузки данных</p>';
+        console.error('Ошибка поиска тренировок:', error);
+        sessionsContent.innerHTML = '<p style="color: #dc3545;">Ошибка поиска</p>';
     }
 }
 
-async function loadTrainerStatistics() {
-    const statisticsContent = document.getElementById('trainerStatisticsContent');
-    if (!statisticsContent) return;
-    
-    statisticsContent.innerHTML = '<p style="color: #666; margin-bottom: 15px; font-size: 14px;">Загрузка статистики...</p>';
-    
-    try {
-        const students = await auth.getStudents();
-        const allSessions = await auth.supabaseRequest('training_sessions?select=*');
-        
-        const statsByVertical = {};
-        const studentsByVertical = {};
-        
-        students.forEach(student => {
-            const vertical = student.group_name || 'Без вертикали';
-            if (!statsByVertical[vertical]) {
-                statsByVertical[vertical] = { sessions: 0, totalScore: 0, students: 0 };
-            }
-            if (!studentsByVertical[vertical]) {
-                studentsByVertical[vertical] = new Set();
-            }
-            studentsByVertical[vertical].add(student.id);
-        });
-        
-        if (allSessions) {
-            allSessions.forEach(session => {
-                const vertical = session.vertical || 'Без вертикали';
-                if (statsByVertical[vertical]) {
-                    statsByVertical[vertical].sessions++;
-                    statsByVertical[vertical].totalScore += session.score || 0;
-                }
-            });
-        }
-        
-        let html = `
-            <div class="stats-cards">
-                <div class="stat-card">
-                    <div class="value">${students.length}</div>
-                    <div class="label">Всего учеников</div>
-                </div>
-                <div class="stat-card">
-                    <div class="value">${allSessions?.length || 0}</div>
-                    <div class="label">Всего тренировок</div>
-                </div>
-            </div>
-            
-            <div class="section-title" style="margin-top: 25px;">
-                <i class="fas fa-chart-bar"></i>
-                <span>Статистика по вертикалям</span>
-            </div>
-        `;
-        
-        for (const [vertical, stats] of Object.entries(statsByVertical)) {
-            const studentCount = studentsByVertical[vertical]?.size || 0;
-            const avgScore = stats.sessions > 0 ? (stats.totalScore / stats.sessions).toFixed(1) : '0.0';
-            
-            html += `
-                <div class="student-item">
-                    <div class="student-info">
-                        <div class="student-name">${vertical}</div>
-                    </div>
-                    <div class="student-stats">
-                        <div class="stat-badge">${studentCount} учеников</div>
-                        <div class="stat-badge">${stats.sessions} тренировок</div>
-                        <div class="stat-badge">Средний: ${avgScore}/5</div>
-                    </div>
-                </div>
-            `;
-        }
-        
-        statisticsContent.innerHTML = html;
-        
-    } catch (error) {
-        console.error('Ошибка загрузки статистики:', error);
-        statisticsContent.innerHTML = '<p style="color: #dc3545;">Ошибка загрузки данных</p>';
-    }
+// Вспомогательная функция для форматирования времени
+function formatTime(dateString) {
+    const date = new Date(dateString);
+    return date.toLocaleTimeString('ru-RU', {
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+// Обновляем функцию loadAllSessions для использования новой логики
+async function loadAllSessions() {
+    await searchSessions(); // Просто используем функцию поиска без фильтров
 }
 
 async function viewStudentSessions(studentId, studentName) {
@@ -3244,7 +3424,7 @@ async function viewStudentChat(studentId, sessionId) {
         }
         
         const commentButton = document.createElement('button');
-        commentButton.className = 'btn btn-primary';
+        commentButton.className = 'btn btn-primary btn-newyear';
         commentButton.style.cssText = 'margin-top: 15px; align-self: center;';
         commentButton.innerHTML = '<i class="fas fa-comment"></i> Добавить комментарий';
         commentButton.onclick = () => openCommentModal(studentId, sessionId, studentName);
@@ -3505,7 +3685,7 @@ function showAchievementNotification(achievement) {
         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
             <span style="font-size: 24px;">${achievement.icon}</span>
             <div>
-                <div style="font-weight: 600; color: #333;">Новое достижение!</div>
+                <div style="font-weight: 600; color: #333;">🎉 Новое достижение!</div>
                 <div style="font-size: 12px; color: #666;">${achievement.name}</div>
             </div>
         </div>
@@ -3578,3 +3758,82 @@ function finishChat() {
         sendPromptToAI();
     }, 1000);
 }
+
+async function loadTrainerStatistics() {
+    const statisticsContent = document.getElementById('trainerStatisticsContent');
+    if (!statisticsContent) return;
+    
+    statisticsContent.innerHTML = '<p style="color: #666; margin-bottom: 15px; font-size: 14px;">Загрузка статистики...</p>';
+    
+    try {
+        const students = await auth.getStudents();
+        const allSessions = await auth.supabaseRequest('training_sessions?select=*');
+        
+        const statsByVertical = {};
+        const studentsByVertical = {};
+        
+        students.forEach(student => {
+            const vertical = student.group_name || 'Без вертикали';
+            if (!statsByVertical[vertical]) {
+                statsByVertical[vertical] = { sessions: 0, totalScore: 0, students: 0 };
+            }
+            if (!studentsByVertical[vertical]) {
+                studentsByVertical[vertical] = new Set();
+            }
+            studentsByVertical[vertical].add(student.id);
+        });
+        
+        if (allSessions) {
+            allSessions.forEach(session => {
+                const vertical = session.vertical || 'Без вертикали';
+                if (statsByVertical[vertical]) {
+                    statsByVertical[vertical].sessions++;
+                    statsByVertical[vertical].totalScore += session.score || 0;
+                }
+            });
+        }
+        
+        let html = `
+            <div class="stats-cards">
+                <div class="stat-card">
+                    <div class="value">${students.length}</div>
+                    <div class="label">Всего учеников</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value">${allSessions?.length || 0}</div>
+                    <div class="label">Всего тренировок</div>
+                </div>
+            </div>
+            
+            <div class="section-title" style="margin-top: 25px;">
+                <i class="fas fa-chart-bar"></i>
+                <span>Статистика по вертикалям</span>
+            </div>
+        `;
+        
+        for (const [vertical, stats] of Object.entries(statsByVertical)) {
+            const studentCount = studentsByVertical[vertical]?.size || 0;
+            const avgScore = stats.sessions > 0 ? (stats.totalScore / stats.sessions).toFixed(1) : '0.0';
+            
+            html += `
+                <div class="student-item">
+                    <div class="student-info">
+                        <div class="student-name">${vertical}</div>
+                    </div>
+                    <div class="student-stats">
+                        <div class="stat-badge">${studentCount} учеников</div>
+                        <div class="stat-badge">${stats.sessions} тренировок</div>
+                        <div class="stat-badge">Средний: ${avgScore}/5</div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        statisticsContent.innerHTML = html;
+        
+    } catch (error) {
+        console.error('Ошибка загрузки статистики:', error);
+        statisticsContent.innerHTML = '<p style="color: #dc3545;">Ошибка загрузки данных</p>';
+    }
+}
+[file content end]

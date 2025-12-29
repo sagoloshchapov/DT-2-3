@@ -1,5 +1,3 @@
-[file name]: app.js
-[file content begin]
 const SUPABASE_URL = 'https://lpoaqliycyuhvdrwuyxj.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_uxkhuA-ngwjNjfaZdHCs7Q_FXOQRrSD';
 const EDGE_FUNCTION_URL = 'https://lpoaqliycyuhvdrwuyxj.supabase.co/functions/v1/rapid-handler';

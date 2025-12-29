@@ -882,11 +882,6 @@ function loadStudentInterface() {
     mainContent.innerHTML = `
         <div class="tab-content active" id="home-tab">
             <div class="welcome-section">
-            <div class="new-year-banner">
-                <i class="fas fa-gift"></i>
-                🎄 С Новым Годом! Пусть каждый диалог будет успешным! 🎅
-                <i class="fas fa-gift"></i>
-            </div>
                 <div class="section-title">
                     <i class="fas fa-bullhorn"></i>
                     <span>Добро пожаловать в тренажер!</span>

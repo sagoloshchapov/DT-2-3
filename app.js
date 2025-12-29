@@ -3224,35 +3224,67 @@ function clearStudentSearch() {
 
 // Новая функция поиска тренировок
 async function searchSessions() {
+    console.log('🔍 === НАЧАЛО ПОИСКА ТРЕНИРОВОК ===');
+    
     const searchInput = document.getElementById('sessionSearchInput');
     const dateFrom = document.getElementById('sessionDateFrom');
     const dateTo = document.getElementById('sessionDateTo');
     const scoreFilter = document.getElementById('sessionScoreFilter');
     
-    if (!searchInput) return;
+    console.log('1. Элементы найдены:', {
+        searchInput: !!searchInput,
+        dateFrom: !!dateFrom,
+        dateTo: !!dateTo,
+        scoreFilter: !!scoreFilter
+    });
+    
+    if (!searchInput) {
+        console.error('❌ Нет поля поиска!');
+        return;
+    }
     
     const searchTerm = searchInput.value.toLowerCase().trim();
     const minScore = scoreFilter.value ? parseInt(scoreFilter.value) : 0;
     
+    console.log('2. Параметры поиска:', {
+        searchTerm,
+        minScore,
+        dateFrom: dateFrom.value,
+        dateTo: dateTo.value
+    });
+    
     const sessionsContent = document.getElementById('trainerSessionsContent');
-    if (!sessionsContent) return;
+    if (!sessionsContent) {
+        console.error('❌ Нет контейнера для результатов!');
+        return;
+    }
     
     sessionsContent.innerHTML = '<p style="color: #666; margin-bottom: 15px; font-size: 14px;">Поиск тренировок...</p>';
     
     try {
+        console.log('3. Загружаем учеников...');
         const students = await auth.getStudents();
+        console.log('Учеников найдено:', students.length);
+        
+        console.log('4. Загружаем тренировки...');
         let allSessions = await auth.supabaseRequest('training_sessions?select=*&order=date.desc');
+        console.log('Тренировок найдено:', allSessions?.length || 0);
         
         const filterSelect = document.getElementById('sessionFilter');
         const filterValue = filterSelect ? filterSelect.value : 'all';
+        console.log('5. Фильтр вертикали:', filterValue);
         
         if (filterValue !== 'all' && allSessions) {
             allSessions = allSessions.filter(session => session.vertical === filterValue);
+            console.log('После фильтрации по вертикали:', allSessions.length);
         }
         
         let filteredSessions = allSessions || [];
         
+        console.log('6. Начальная фильтрация:', filteredSessions.length);
+        
         if (searchTerm) {
+            console.log('Фильтруем по запросу:', searchTerm);
             filteredSessions = filteredSessions.filter(session => {
                 const student = students.find(s => s.id === session.user_id);
                 const studentName = student ? student.username.toLowerCase() : '';
@@ -3263,28 +3295,40 @@ async function searchSessions() {
                        scenario.includes(searchTerm) ||
                        clientType.includes(searchTerm);
             });
+            console.log('После фильтра по запросу:', filteredSessions.length);
         }
         
         if (dateFrom.value || dateTo.value) {
+            console.log('Фильтруем по дате...');
             filteredSessions = filteredSessions.filter(session => {
                 if (!session.date) return false;
                 
-                const sessionDate = new Date(session.date);
-                const fromDate = dateFrom.value ? new Date(dateFrom.value) : null;
-                const toDate = dateTo.value ? new Date(dateTo.value) : null;
-                
-                if (fromDate && sessionDate < fromDate) return false;
-                if (toDate && sessionDate > toDate) return false;
-                
-                return true;
+                try {
+                    const sessionDate = new Date(session.date);
+                    const fromDate = dateFrom.value ? new Date(dateFrom.value) : null;
+                    const toDate = dateTo.value ? new Date(dateTo.value) : null;
+                    
+                    if (fromDate && sessionDate < fromDate) return false;
+                    if (toDate && sessionDate > toDate) return false;
+                    
+                    return true;
+                } catch (e) {
+                    console.warn('Ошибка фильтрации даты для сессии:', session.id, e);
+                    return true;
+                }
             });
+            console.log('После фильтра по дате:', filteredSessions.length);
         }
         
         if (minScore > 0) {
+            console.log('Фильтруем по оценке (>= ' + minScore + ')');
             filteredSessions = filteredSessions.filter(session => 
                 session.score && session.score >= minScore
             );
+            console.log('После фильтра по оценке:', filteredSessions.length);
         }
+        
+        console.log('7. Итоговое количество тренировок:', filteredSessions.length);
         
         let html = `
             <div class="stats-cards">
@@ -3302,14 +3346,22 @@ async function searchSessions() {
         `;
         
         if (filteredSessions.length > 0) {
+            console.log('8. Создаем HTML для результатов...');
+            
             const sessionsByDate = {};
             filteredSessions.forEach(session => {
-                const date = new Date(session.date).toLocaleDateString('ru-RU');
-                if (!sessionsByDate[date]) {
-                    sessionsByDate[date] = [];
+                try {
+                    const date = new Date(session.date).toLocaleDateString('ru-RU');
+                    if (!sessionsByDate[date]) {
+                        sessionsByDate[date] = [];
+                    }
+                    sessionsByDate[date].push(session);
+                } catch (e) {
+                    console.warn('Ошибка обработки даты сессии:', session.id, e);
                 }
-                sessionsByDate[date].push(session);
             });
+            
+            console.log('9. Группировка по датам:', Object.keys(sessionsByDate).length);
             
             for (const [date, dateSessions] of Object.entries(sessionsByDate)) {
                 const dateId = `date_${date.replace(/[\.\s]/g, '_')}`;
@@ -3338,7 +3390,7 @@ async function searchSessions() {
                                 <div style="margin-top: 5px; font-size: 12px; color: #666;">${session.scenario || 'Тренировка'}</div>
                             </div>
                             <div class="student-stats">
-                                <div class="stat-badge">${session.score}/5</div>
+                                <div class="stat-badge">${session.score || 0}/5</div>
                                 <div class="stat-badge">${formatTime(session.date)}</div>
                             </div>
                             <div class="trainer-actions">
@@ -3360,17 +3412,29 @@ async function searchSessions() {
             }
             
             sessionsContent.innerHTML = html;
+            console.log('✅ Поиск тренировок завершен успешно!');
         } else {
+            console.log('10. Нет результатов поиска');
             html += '<div style="text-align: center; padding: 20px; color: #666;">По вашему запросу ничего не найдено</div>';
             sessionsContent.innerHTML = html;
         }
         
     } catch (error) {
-        console.error('Ошибка поиска тренировок:', error);
-        sessionsContent.innerHTML = '<p style="color: #dc3545;">Ошибка поиска</p>';
+        console.error('❌ Ошибка при поиске тренировок:', error);
+        console.error('Детали ошибки:', error.message, error.stack);
+        
+        sessionsContent.innerHTML = `
+            <div style="text-align: center; padding: 40px; color: #dc3545;">
+                <div style="font-size: 48px; margin-bottom: 10px;">⚠️</div>
+                <div style="font-size: 16px; margin-bottom: 10px;">Ошибка поиска</div>
+                <div style="font-size: 12px; margin-bottom: 10px;">${error.message}</div>
+                <button class="btn btn-secondary" onclick="loadAllSessions()" style="margin-top: 15px;">
+                    <i class="fas fa-redo"></i> Попробовать снова
+                </button>
+            </div>
+        `;
     }
 }
-
 // Вспомогательная функция для форматирования времени
 function formatTime(dateString) {
     const date = new Date(dateString);

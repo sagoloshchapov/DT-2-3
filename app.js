@@ -3221,6 +3221,7 @@ function clearStudentSearch() {
     loadAllStudents();
 }
 
+
 // Новая функция поиска тренировок
 async function searchSessions() {
     const searchInput = document.getElementById('sessionSearchInput');
@@ -3249,7 +3250,6 @@ async function searchSessions() {
             allSessions = allSessions.filter(session => session.vertical === filterValue);
         }
         
-        // Фильтрация по поисковому запросу
         let filteredSessions = allSessions || [];
         
         if (searchTerm) {
@@ -3265,7 +3265,6 @@ async function searchSessions() {
             });
         }
         
-        // Фильтрация по дате
         if (dateFrom.value || dateTo.value) {
             filteredSessions = filteredSessions.filter(session => {
                 if (!session.date) return false;
@@ -3281,7 +3280,6 @@ async function searchSessions() {
             });
         }
         
-        // Фильтрация по оценке
         if (minScore > 0) {
             filteredSessions = filteredSessions.filter(session => 
                 session.score && session.score >= minScore
@@ -3304,7 +3302,6 @@ async function searchSessions() {
         `;
         
         if (filteredSessions.length > 0) {
-            // Группировка по датам
             const sessionsByDate = {};
             filteredSessions.forEach(session => {
                 const date = new Date(session.date).toLocaleDateString('ru-RU');
@@ -3361,17 +3358,11 @@ async function searchSessions() {
                     </div>
                 `;
             }
+            
+            sessionsContent.innerHTML = html;
         } else {
             html += '<div style="text-align: center; padding: 20px; color: #666;">По вашему запросу ничего не найдено</div>';
-        }
-        
-        sessionsContent.innerHTML = html;
-        
-        // Разворачиваем первую дату
-        const firstDate = Object.keys(sessionsByDate)[0];
-        if (firstDate) {
-            const dateId = `date_${firstDate.replace(/[\.\s]/g, '_')}`;
-            toggleVerticalGroup(dateId, true);
+            sessionsContent.innerHTML = html;
         }
         
     } catch (error) {

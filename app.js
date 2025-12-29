@@ -2957,16 +2957,19 @@ async function loadAllStudents() {
                     </div>
                 `;
             }
+            
+            // ДОБАВЬ ЭТУ СТРОКУ В КОНЕЦ БЛОКА if (students.length > 0)
+            studentsContent.innerHTML = html;
+            
+            // По умолчанию разворачиваем первую группу
+            const firstGroup = Object.keys(studentsByGroup)[0];
+            if (firstGroup) {
+                toggleVerticalGroup(`group_${firstGroup.replace(/\s+/g, '_')}`, true);
+            }
         } else {
+            // ЕСЛИ УЧЕНИКОВ НЕТ - ПОКАЗЫВАЕМ СООБЩЕНИЕ
             html += '<div style="text-align: center; padding: 20px; color: #666;">Нет учеников в системе</div>';
-        }
-        
-        studentsContent.innerHTML = html;
-        
-        // По умолчанию разворачиваем первую группу
-        const firstGroup = Object.keys(studentsByGroup)[0];
-        if (firstGroup) {
-            toggleVerticalGroup(`group_${firstGroup.replace(/\s+/g, '_')}`, true);
+            studentsContent.innerHTML = html;
         }
         
     } catch (error) {

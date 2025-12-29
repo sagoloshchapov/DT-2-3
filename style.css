@@ -1365,4 +1365,164 @@ body {
 
 .limit-badge:hover {
     transform: scale(1.05);
+
+/* ================= НОВОГОДНЕЕ ОФОРМЛЕНИЕ ================= */
+.new-year-decoration {
+    position: relative;
+    overflow: hidden;
+}
+
+.new-year-decoration::before {
+    content: "🎄";
+    position: absolute;
+    top: 15px;
+    left: 15px;
+    font-size: 32px;
+    z-index: 1;
+    animation: floatTree 6s ease-in-out infinite;
+}
+
+.new-year-decoration::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 40px;
+    height: 40px;
+    background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%2310a37f"><path d="M12 2L9 8H2L7 13L4 20L12 16L20 20L17 13L22 8H15L12 2Z"/></svg>');
+    background-size: contain;
+    opacity: 0.7;
+    animation: snowflakeSpin 8s linear infinite;
+}
+
+.new-year-decoration .header {
+    position: relative;
+    z-index: 2;
+}
+
+@keyframes floatTree {
+    0%, 100% { transform: translateY(0) rotate(0deg); }
+    50% { transform: translateY(-5px) rotate(2deg); }
+}
+
+@keyframes snowflakeSpin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Снежинки в углах */
+.container {
+    position: relative;
+}
+
+.snowflake-corner {
+    position: absolute;
+    font-size: 20px;
+    opacity: 0.6;
+    animation: snowflakeFloat 10s linear infinite;
+    z-index: 0;
+}
+
+.snowflake-corner:nth-child(1) {
+    top: 10px;
+    right: 10px;
+    animation-delay: 0s;
+}
+
+.snowflake-corner:nth-child(2) {
+    bottom: 10px;
+    left: 10px;
+    animation-delay: 3s;
+}
+
+.snowflake-corner:nth-child(3) {
+    top: 50%;
+    left: 10px;
+    animation-delay: 6s;
+}
+
+.snowflake-corner:nth-child(4) {
+    top: 10px;
+    right: 50%;
+    animation-delay: 9s;
+}
+
+@keyframes snowflakeFloat {
+    0%, 100% { 
+        transform: translateY(0) scale(1);
+        opacity: 0.6;
+    }
+    50% { 
+        transform: translateY(-10px) scale(1.1);
+        opacity: 1;
+    }
+}
+
+/* Новогодний баннер */
+.new-year-banner {
+    background: linear-gradient(135deg, #d32f2f 0%, #1976d2 100%);
+    color: white;
+    padding: 8px 15px;
+    border-radius: 8px;
+    margin: 10px 0 15px 0;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    animation: bannerPulse 4s ease-in-out infinite;
+    border: 2px solid #ffd700;
+}
+
+@keyframes bannerPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(255, 215, 0, 0.4); }
+    50% { box-shadow: 0 0 0 10px rgba(255, 215, 0, 0); }
+}
+
+/* Новогодняя кнопка */
+.btn-holiday {
+    background: linear-gradient(135deg, #d32f2f 0%, #c2185b 100%);
+    color: white !important;
+    border: none;
+    position: relative;
+    overflow: hidden;
+}
+
+.btn-holiday::before {
+    content: "❄️";
+    position: absolute;
+    top: -10px;
+    left: -10px;
+    font-size: 20px;
+    opacity: 0.5;
+    animation: snowFall 3s linear infinite;
+}
+
+@keyframes snowFall {
+    0% { transform: translateY(-10px) rotate(0deg); }
+    100% { transform: translateY(100px) rotate(360deg); }
+}
+
+/* Новогодняя рамка для карточек */
+.holiday-card {
+    border: 2px solid transparent;
+    background: linear-gradient(white, white) padding-box,
+                linear-gradient(45deg, #d32f2f, #1976d2, #388e3c) border-box;
+    position: relative;
+}
+
+.holiday-card::before {
+    content: "⭐";
+    position: absolute;
+    top: -10px;
+    right: -10px;
+    font-size: 16px;
+    animation: starTwinkle 2s ease-in-out infinite;
+}
+
+@keyframes starTwinkle {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.9); }
 }

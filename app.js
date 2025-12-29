@@ -2719,29 +2719,37 @@ function loadTrainerInterface() {
             </div>
         </div>
 
-        <div class="tab-content" id="trainer_students-tab">
-            <div class="welcome-section">
-                <div class="section-title">
-                    <i class="fas fa-users"></i>
-                    <span>Все ученики</span>
-                </div>
-                
-                <div class="trainer-search-section">
-                    <input type="text" class="trainer-search-input" id="studentSearchInput" placeholder="Поиск по имени ученика..." oninput="searchStudents()">
-                    <input type="date" class="trainer-date-input" id="studentDateFrom" placeholder="Дата от">
-                    <input type="date" class="trainer-date-input" id="studentDateTo" placeholder="Дата до">
-                    <button class="trainer-search-btn" onclick="searchStudents()">
-                        <i class="fas fa-search"></i> Поиск
-                    </button>
-                </div>
-                
-                <div id="trainerStudentsContent">
-                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
-                        Загрузка списка учеников...
-                    </p>
-                </div>
-            </div>
+<div class="tab-content" id="trainer_students-tab">
+    <div class="welcome-section">
+        <div class="section-title">
+            <i class="fas fa-users"></i>
+            <span>Все ученики</span>
         </div>
+        
+        <div class="trainer-search-section">
+            <input type="text" class="trainer-search-input" id="studentSearchInput" 
+                   placeholder="Поиск по имени ученика..." 
+                   onkeyup="searchStudents()">
+            <input type="date" class="trainer-date-input" id="studentDateFrom" 
+                   placeholder="Дата от" onchange="searchStudents()">
+            <input type="date" class="trainer-date-input" id="studentDateTo" 
+                   placeholder="Дата до" onchange="searchStudents()">
+            <button class="trainer-search-btn" onclick="searchStudents()">
+                <i class="fas fa-search"></i> Поиск
+            </button>
+            <button class="btn btn-secondary" onclick="clearStudentSearch()" 
+                    style="padding: 8px 15px; border-radius: 8px; border: 1px solid #ddd;">
+                <i class="fas fa-times"></i> Очистить
+            </button>
+        </div>
+        
+        <div id="trainerStudentsContent">
+            <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                Загрузка списка учеников...
+            </p>
+        </div>
+    </div>
+</div>
 
         <div class="tab-content" id="trainer_sessions-tab">
             <div class="welcome-section">

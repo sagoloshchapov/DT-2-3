@@ -2818,7 +2818,7 @@ async function loadTrainerDashboard() {
     
     try {
         const students = await auth.getStudents();
-        const allSessions = await auth.supabaseRequest('training_sessions?select=*&order=date.desc&limit=50');
+        const allSessions = await auth.supabaseRequest('training_sessions?select=*&order=date.desc&limit=500');
         
         let html = `
             <div class="stats-cards">
@@ -2839,7 +2839,7 @@ async function loadTrainerDashboard() {
         `;
         
         if (allSessions && allSessions.length > 0) {
-            allSessions.slice(0, 10).forEach(session => {
+            allSessions.slice(0, 50).forEach(session => {
                 const student = students.find(s => s.id === session.user_id);
                 const clientType = clientTypes[session.client_type];
                 
@@ -3267,7 +3267,7 @@ async function searchSessions() {
         console.log('Учеников найдено:', students.length);
         
         console.log('4. Загружаем тренировки...');
-        let allSessions = await auth.supabaseRequest('training_sessions?select=*&order=date.desc');
+        let allSessions = await auth.supabaseRequest('training_sessions?select=*&order=date.desc&limit=500');
         console.log('Тренировок найдено:', allSessions?.length || 0);
         
         const filterSelect = document.getElementById('sessionFilter');

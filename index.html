@@ -1,1484 +1,309 @@
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-}
-
-body {
-    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-    min-height: 100vh;
-    padding: 20px;
-    overflow-y: auto;
-}
-
-.container {
-    background: white;
-    border-radius: 16px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.15);
-    max-width: 1400px;
-    width: 100%;
-    margin: 0 auto;
-    min-height: 90vh;
-    display: flex;
-    flex-direction: column;
-    position: relative;
-    overflow: hidden;
-}
-
-.header {
-    background: linear-gradient(135deg, #2c3e50 0%, #4a6491 100%);
-    color: white;
-    padding: 20px 30px;
-    position: relative;
-    border-radius: 16px 16px 0 0;
-}
-
-.header h1 {
-    font-size: 22px;
-    margin-bottom: 5px;
-    font-weight: 600;
-    color: white;
-}
-
-.header p {
-    opacity: 0.9;
-    font-size: 14px;
-}
-
-.user-panel {
-    position: absolute;
-    top: 20px;
-    right: 30px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    background: rgba(255,255,255,0.2);
-    padding: 6px 12px;
-    border-radius: 16px;
-    backdrop-filter: blur(10px);
-}
-
-.user-info {
-    color: white;
-    font-size: 13px;
-}
-
-.logout-btn {
-    background: rgba(255,255,255,0.3);
-    border: none;
-    color: white;
-    padding: 4px 8px;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 11px;
-    transition: all 0.3s;
-}
-
-.logout-btn:hover {
-    background: rgba(255,255,255,0.4);
-}
-
-.content {
-    display: flex;
-    flex: 1;
-    overflow: hidden;
-}
-
-.sidebar {
-    width: 220px;
-    background: #f8f9fa;
-    border-right: 1px solid #e9ecef;
-    padding: 20px;
-    overflow-y: auto;
-}
-
-.nav-item {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px 15px;
-    margin-bottom: 8px;
-    border-radius: 10px;
-    cursor: pointer;
-    transition: all 0.3s;
-    color: #555;
-    text-decoration: none;
-    font-weight: 500;
-}
-
-.nav-item:hover {
-    background: #e9ecef;
-    color: #333;
-}
-
-.nav-item.active {
-    background: linear-gradient(135deg, #2c3e50 0%, #4a6491 100%);
-    color: white;
-}
-
-.nav-item i {
-    width: 20px;
-    text-align: center;
-}
-
-.main-content {
-    flex: 1;
-    padding: 25px;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-}
-
-.tab-content {
-    display: none;
-    flex: 1;
-}
-
-.tab-content.active {
-    display: flex;
-    flex-direction: column;
-}
-
-.welcome-section {
-    background: #f8f9fa;
-    border-radius: 12px;
-    padding: 20px;
-    margin-bottom: 20px;
-    border: 1px solid #e9ecef;
-}
-
-.section-title {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 15px;
-    font-size: 16px;
-    font-weight: 600;
-    color: #333;
-}
-
-.stats-cards {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 12px;
-    margin: 15px 0;
-}
-
-.stat-card {
-    background: white;
-    border-radius: 10px;
-    padding: 15px;
-    text-align: center;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-    border-top: 3px solid #4a6491;
-}
-
-.stat-card .value {
-    font-size: 24px;
-    font-weight: 700;
-    color: #2c3e50;
-    margin: 5px 0;
-}
-
-.stat-card .label {
-    font-size: 13px;
-    color: #666;
-}
-
-.training-container {
-    display: flex;
-    gap: 25px;
-    flex: 1;
-    min-height: 0;
-}
-
-.scenario-section {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-width: 300px;
-}
-
-.chat-section {
-    flex: 3;
-    display: flex;
-    flex-direction: column;
-    background: white;
-    border-radius: 12px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
-    overflow: hidden;
-    min-height: 600px;
-    max-height: 700px;
-}
-
-.vertical-info {
-    background: #f0f9f6;
-    border-radius: 10px;
-    padding: 15px;
-    margin-bottom: 20px;
-    border-left: 4px solid #4a6491;
-}
-
-.vertical-info h3 {
-    color: #2c3e50;
-    margin-bottom: 5px;
-    font-size: 15px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.vertical-info p {
-    color: #555;
-    font-size: 13px;
-    line-height: 1.4;
-}
-
-.client-type-badge {
-    display: inline-block;
-    padding: 4px 10px;
-    background: #e3f2fd;
-    color: #1976d2;
-    border-radius: 12px;
-    font-size: 12px;
-    font-weight: 600;
-    margin-top: 8px;
-    cursor: pointer;
-    transition: all 0.3s;
-}
-
-.client-type-badge:hover {
-    transform: translateY(-1px);
-}
-
-.client-type-badge.selected {
-    background: linear-gradient(135deg, #1976d2 0%, #4a6491 100%);
-    color: white;
-}
-
-.scenario-card {
-    background: white;
-    border-radius: 12px;
-    padding: 20px;
-    margin-top: 10px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-    border-left: 4px solid #4a6491;
-    flex: 1;
-}
-
-.scenario-title {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 10px;
-    font-weight: 600;
-    color: #333;
-    font-size: 15px;
-}
-
-.scenario-details {
-    color: #666;
-    line-height: 1.5;
-    margin-bottom: 15px;
-    font-size: 14px;
-}
-
-.chat-header {
-    background: #f8f9fa;
-    padding: 15px;
-    border-bottom: 1px solid #e9ecef;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.chat-title {
-    font-weight: 600;
-    color: #333;
-    font-size: 15px;
-}
-
-.chat-status {
-    font-size: 12px;
-    color: #666;
-    padding: 4px 8px;
-    background: #e9ecef;
-    border-radius: 12px;
-}
-
-.chat-messages {
-    flex: 1;
-    padding: 20px;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 15px;
-    min-height: 400px;
-    max-height: 500px;
-}
-
-.message {
-    max-width: 80%;
-    padding: 12px 15px;
-    border-radius: 12px;
-    line-height: 1.4;
-    font-size: 14px;
-    position: relative;
-}
-
-.message.ai {
-    background: #f0f2f5;
-    align-self: flex-start;
-    border-bottom-left-radius: 4px;
-}
-
-.message.user {
-    background: linear-gradient(135deg, #4a6491 0%, #2c3e50 100%);
-    color: white;
-    align-self: flex-end;
-    border-bottom-right-radius: 4px;
-}
-
-.chat-input-container {
-    padding: 15px;
-    border-top: 1px solid #e9ecef;
-    background: #f8f9fa;
-}
-
-.chat-input-wrapper {
-    display: flex;
-    gap: 10px;
-}
-
-.chat-input {
-    flex: 1;
-    padding: 10px 15px;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    font-size: 14px;
-    resize: none;
-    min-height: 40px;
-    max-height: 100px;
-    font-family: inherit;
-}
-
-.send-btn {
-    background: linear-gradient(135deg, #4a6491 0%, #2c3e50 100%);
-    color: white;
-    border: none;
-    border-radius: 8px;
-    padding: 0 20px;
-    cursor: pointer;
-    font-weight: 600;
-    transition: all 0.3s;
-}
-
-.send-btn:hover:not(:disabled) {
-    background: #2c3e50;
-    transform: translateY(-1px);
-}
-
-.send-btn:disabled {
-    background: #ccc;
-    cursor: not-allowed;
-}
-
-.action-buttons {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin-top: 15px;
-}
-
-.btn {
-    padding: 12px;
-    border: none;
-    border-radius: 10px;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.3s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-}
-
-.btn-primary {
-    background: linear-gradient(135deg, #2c3e50 0%, #4a6491 100%);
-    color: white;
-}
-
-.btn-primary:hover:not(:disabled) {
-    transform: translateY(-1px);
-    box-shadow: 0 5px 15px rgba(44, 62, 80, 0.2);
-}
-
-.btn-primary:disabled {
-    background: #ccc;
-    cursor: not-allowed;
-    transform: none;
-    box-shadow: none;
-}
-
-.btn-secondary {
-    background: #f8f9fa;
-    color: #333;
-    border: 2px solid #e9ecef;
-}
-
-.btn-secondary:hover {
-    background: #e9ecef;
-}
-
-.progress-panel {
-    background: white;
-    border-radius: 12px;
-    padding: 20px;
-    margin-bottom: 20px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-}
-
-.level-info {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 10px;
-}
-
-.level-badge {
-    background: linear-gradient(135deg, #2c3e50 0%, #4a6491 100%);
-    color: white;
-    padding: 6px 12px;
-    border-radius: 16px;
-    font-weight: 600;
-    font-size: 12px;
-}
-
-.xp-bar {
-    height: 16px;
-    background: #e9ecef;
-    border-radius: 8px;
-    overflow: hidden;
-    margin: 15px 0;
-    position: relative;
-}
-
-.xp-fill {
-    height: 100%;
-    background: linear-gradient(90deg, #2c3e50, #4a6491);
-    border-radius: 8px;
-    transition: width 0.5s ease;
-}
-
-.xp-text {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #333;
-    font-weight: 600;
-    font-size: 11px;
-}
-
-.stats-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 10px;
-    margin-top: 15px;
-}
-
-.stat-item {
-    text-align: center;
-    padding: 8px;
-    background: #f8f9fa;
-    border-radius: 8px;
-}
-
-.stat-icon {
-    font-size: 16px;
-    display: block;
-    margin-bottom: 3px;
-}
-
-.stat-value {
-    font-size: 16px;
-    font-weight: 600;
-    color: #333;
-    display: block;
-}
-
-.stat-label {
-    font-size: 11px;
-    color: #666;
-    display: block;
-}
-
-.leaderboard {
-    background: white;
-    border-radius: 12px;
-    padding: 20px;
-    margin-bottom: 20px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-}
-
-.leaderboard-title {
-    font-size: 16px;
-    font-weight: 600;
-    margin-bottom: 15px;
-    color: #333;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 10px;
-}
-
-.leaderboard-tabs {
-    display: flex;
-    gap: 5px;
-    background: #f8f9fa;
-    padding: 4px;
-    border-radius: 8px;
-}
-
-.leaderboard-tab {
-    padding: 6px 12px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: 500;
-    transition: all 0.3s;
-}
-
-.leaderboard-tab:hover {
-    background: #e9ecef;
-}
-
-.leaderboard-tab.active {
-    background: linear-gradient(135deg, #2c3e50 0%, #4a6491 100%);
-    color: white;
-}
-
-.leaderboard-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-}
-
-.leaderboard-table th {
-    text-align: left;
-    padding: 10px;
-    background: #f8f9fa;
-    color: #555;
-    font-weight: 600;
-    font-size: 12px;
-}
-
-.leaderboard-table td {
-    padding: 10px;
-    border-bottom: 1px solid #e9ecef;
-}
-
-.leaderboard-table tr:hover {
-    background: #f8f9fa;
-}
-
-.rank {
-    font-weight: 600;
-    width: 40px;
-    text-align: center;
-}
-
-.rank-1 { color: #ffd700; }
-.rank-2 { color: #c0c0c0; }
-.rank-3 { color: #cd7f32; }
-
-.player-you {
-    background: #f0f9f6 !important;
-}
-
-.badges-section {
-    background: white;
-    border-radius: 12px;
-    padding: 20px;
-    margin-bottom: 20px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-}
-
-.badges-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-    gap: 10px;
-    margin-top: 15px;
-}
-
-.badge {
-    text-align: center;
-    padding: 12px 8px;
-    border-radius: 10px;
-    background: #f8f9fa;
-    transition: all 0.3s;
-    position: relative;
-    cursor: help;
-}
-
-.badge.earned {
-    background: white;
-    border: 2px solid #4a6491;
-    box-shadow: 0 3px 10px rgba(74, 100, 145, 0.15);
-}
-
-.badge.locked {
-    opacity: 0.6;
-    filter: grayscale(0.7);
-}
-
-.badge-icon {
-    font-size: 24px;
-    display: block;
-    margin-bottom: 8px;
-}
-
-.badge-name {
-    font-size: 12px;
-    font-weight: 600;
-    color: #333;
-    display: block;
-    line-height: 1.2;
-}
-
-.badge-desc {
-    font-size: 10px;
-    color: #666;
-    margin-top: 3px;
-    display: block;
-    line-height: 1.2;
-}
-
-.modal {
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0,0,0,0.5);
-    z-index: 1000;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-    overflow-y: auto;
-}
-
-.modal-content {
-    background: white;
-    padding: 25px;
-    border-radius: 16px;
-    max-width: 500px;
-    width: 90%;
-    box-shadow: 0 15px 30px rgba(0,0,0,0.2);
-    text-align: center;
-    position: relative;
-}
-
-.chat-modal .modal-content {
-    max-width: 800px;
-    max-height: 80vh;
-    display: flex;
-    flex-direction: column;
-    padding: 0;
-}
-
-.chat-modal-header {
-    padding: 20px;
-    background: #f8f9fa;
-    border-bottom: 1px solid #e9ecef;
-    border-radius: 16px 16px 0 0;
-}
-
-.chat-modal-header h3 {
-    margin-bottom: 5px;
-    color: #333;
-}
-
-.chat-modal-info {
-    display: flex;
-    justify-content: space-between;
-    font-size: 13px;
-    color: #666;
-    margin-top: 10px;
-}
-
-.chat-modal-messages {
-    flex: 1;
-    padding: 20px;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 15px;
-    max-height: 50vh;
-}
-
-.chat-modal-footer {
-    padding: 15px 20px;
-    background: #f8f9fa;
-    border-top: 1px solid #e9ecef;
-    border-radius: 0 0 16px 16px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.storage-info {
-    font-size: 12px;
-    color: #666;
-    background: #fff3cd;
-    padding: 8px 12px;
-    border-radius: 8px;
-    border-left: 3px solid #ffc107;
-}
-
-.result-icon {
-    font-size: 48px;
-    margin-bottom: 15px;
-}
-
-.result-title {
-    font-size: 20px;
-    font-weight: 600;
-    margin-bottom: 10px;
-    color: #333;
-}
-
-.result-xp {
-    font-size: 18px;
-    color: #4a6491;
-    margin-bottom: 15px;
-    font-weight: 600;
-}
-
-.form-group {
-    margin-bottom: 12px;
-    text-align: left;
-}
-
-.form-group label {
-    display: block;
-    margin-bottom: 5px;
-    font-weight: 500;
-    color: #333;
-    font-size: 13px;
-}
-
-.form-group input, .form-group select {
-    width: 100%;
-    padding: 8px 12px;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    font-size: 13px;
-}
-
-.password-container {
-    position: relative;
-}
-
-.password-toggle {
-    position: absolute;
-    right: 10px;
-    top: 30px;
-    cursor: pointer;
-    color: #666;
-}
-
-.group-badge {
-    display: inline-block;
-    padding: 2px 6px;
-    background: #e3f2fd;
-    color: #1976d2;
-    border-radius: 10px;
-    font-size: 10px;
-    font-weight: 600;
-    margin-left: 5px;
-}
-
-.error-message {
-    color: #dc3545;
-    font-size: 11px;
-    margin-top: 3px;
-    display: none;
-}
-
-.chart-container {
-    background: white;
-    padding: 15px;
-    border-radius: 10px;
-    margin-top: 10px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-}
-
-.training-timer {
-    font-size: 12px;
-    color: #666;
-    margin-top: 5px;
-}
-
-.training-active {
-    color: #4a6491;
-    font-weight: 600;
-}
-
-.history-item {
-    background: white;
-    padding: 15px;
-    border-radius: 8px;
-    margin-bottom: 10px;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-    cursor: pointer;
-    transition: all 0.3s;
-}
-
-.history-item:hover {
-    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-    transform: translateY(-2px);
-}
-
-.history-item-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 8px;
-}
-
-.history-item-title {
-    font-weight: 600;
-    color: #333;
-    font-size: 14px;
-}
-
-.history-item-score {
-    font-weight: 600;
-    color: #4a6491;
-    font-size: 16px;
-}
-
-.history-item-details {
-    font-size: 13px;
-    color: #666;
-    margin-bottom: 5px;
-}
-
-.history-item-footer {
-    display: flex;
-    justify-content: space-between;
-    font-size: 12px;
-    color: #888;
-    margin-top: 8px;
-}
-
-.view-chat-btn {
-    color: #4a6491;
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: 12px;
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    padding: 4px 8px;
-    border-radius: 6px;
-    transition: all 0.3s;
-}
-
-.view-chat-btn:hover {
-    background: #f0f9f6;
-}
-
-.confidentiality-warning {
-    background: white;
-    color: #333;
-    padding: 15px;
-    border-radius: 10px;
-    margin: 15px 0;
-    border-left: 4px solid #4a6491;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-}
-
-.confidentiality-warning h4 {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 10px;
-    font-size: 14px;
-    color: #2c3e50;
-}
-
-.confidentiality-list {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-    font-size: 11px;
-    margin-top: 10px;
-}
-
-.confidentiality-list .prohibited {
-    background: #f8f9fa;
-    padding: 8px;
-    border-radius: 6px;
-    border-left: 3px solid #dc3545;
-}
-
-.confidentiality-list .recommended {
-    background: #f8f9fa;
-    padding: 8px;
-    border-radius: 6px;
-    border-left: 3px solid #28a745;
-}
-
-.news-section {
-    background: white;
-    border-radius: 12px;
-    padding: 20px;
-    margin: 20px 0;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-    border-left: 4px solid #667eea;
-}
-
-.news-title {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 15px;
-    font-size: 16px;
-    font-weight: 600;
-    color: #333;
-}
-
-.news-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 15px;
-    margin-top: 15px;
-}
-
-.news-item {
-    background: #f8f9fa;
-    padding: 15px;
-    border-radius: 8px;
-    transition: all 0.3s;
-    border-left: 3px solid #4a6491;
-}
-
-.news-item:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-}
-
-.news-date {
-    font-size: 11px;
-    color: #666;
-    margin-bottom: 5px;
-    display: flex;
-    align-items: center;
-    gap: 5px;
-}
-
-.news-content {
-    font-size: 13px;
-    color: #333;
-    line-height: 1.4;
-}
-
-.news-tag {
-    display: inline-block;
-    padding: 2px 8px;
-    background: #e3f2fd;
-    color: #1976d2;
-    border-radius: 10px;
-    font-size: 10px;
-    font-weight: 600;
-    margin-top: 8px;
-}
-
-.trainer-card {
-    background: white;
-    border-radius: 12px;
-    padding: 20px;
-    margin-bottom: 20px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-    border-left: 4px solid #667eea;
-}
-
-.student-list {
-    margin-top: 15px;
-}
-
-.student-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px 15px;
-    background: #f8f9fa;
-    border-radius: 8px;
-    margin-bottom: 8px;
-    border-left: 3px solid #4a6491;
-}
-
-.student-info {
-    flex: 1;
-}
-
-.student-name {
-    font-weight: 600;
-    color: #333;
-    margin-bottom: 3px;
-}
-
-.student-group {
-    font-size: 12px;
-    color: #666;
-}
-
-.student-stats {
-    display: flex;
-    gap: 15px;
-    font-size: 12px;
-    color: #555;
-}
-
-.stat-badge {
-    background: #e9ecef;
-    padding: 3px 8px;
-    border-radius: 6px;
-    font-weight: 600;
-}
-
-.trainer-actions {
-    display: flex;
-    gap: 8px;
-}
-
-.comment-btn {
-    background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%);
-    color: #333;
-    border: none;
-    padding: 6px 12px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: 600;
-    transition: all 0.3s;
-}
-
-.comment-btn:hover {
-    background: #e0a800;
-    transform: translateY(-1px);
-}
-
-.view-chat-btn-trainer {
-    background: linear-gradient(135deg, #2c3e50 0%, #4a6491 100%);
-    color: white;
-    border: none;
-    padding: 6px 12px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: 600;
-    transition: all 0.3s;
-}
-
-.view-chat-btn-trainer:hover {
-    background: #2c3e50;
-    transform: translateY(-1px);
-}
-
-.trainer-comment {
-    background: #fff3cd;
-    border-left: 4px solid #ffc107;
-    padding: 10px 15px;
-    margin-top: 10px;
-    border-radius: 0 8px 8px 0;
-}
-
-.comment-header {
-    display: flex;
-    justify-content: space-between;
-    font-size: 12px;
-    color: #856404;
-    margin-bottom: 5px;
-}
-
-.comment-text {
-    font-size: 13px;
-    color: #333;
-}
-
-.add-comment-form {
-    margin-top: 10px;
-}
-
-.comment-input {
-    width: 100%;
-    padding: 8px 12px;
-    border: 1px solid #ddd;
-    border-radius: 6px;
-    font-size: 13px;
-    margin-bottom: 8px;
-    resize: vertical;
-    min-height: 60px;
-    font-family: inherit;
-}
-
-.comment-submit-btn {
-    background: linear-gradient(135deg, #28a745 0%, #218838 100%);
-    color: white;
-    border: none;
-    padding: 6px 12px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: 600;
-    transition: all 0.3s;
-}
-
-.comment-submit-btn:hover {
-    background: #218838;
-    transform: translateY(-1px);
-}
-
-.ai-feedback-section {
-    background: white;
-    border-radius: 12px;
-    padding: 20px;
-    margin: 20px 0;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-    border-left: 4px solid #667eea;
-    text-align: left;
-}
-
-.ai-feedback-title {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 15px;
-    font-size: 16px;
-    font-weight: 600;
-    color: #333;
-}
-
-.ai-feedback-content {
-    background: #f8f9fa;
-    padding: 15px;
-    border-radius: 8px;
-    border: 1px solid #e9ecef;
-    font-size: 14px;
-    line-height: 1.6;
-    white-space: pre-wrap;
-    max-height: 300px;
-    overflow-y: auto;
-    margin-top: 10px;
-}
-
-.ai-feedback-score {
-    background: #4a6491;
-    color: white;
-    padding: 8px 15px;
-    border-radius: 20px;
-    font-weight: 600;
-    display: inline-block;
-    margin-bottom: 10px;
-}
-
-.daily-limit-notification {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    padding: 10px 15px;
-    border-radius: 8px;
-    margin-bottom: 15px;
-    text-align: center;
-    font-size: 13px;
-    font-weight: 600;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-}
-
-.client-type-selector {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 8px;
-    margin-bottom: 15px;
-}
-
-.client-type-option {
-    padding: 10px;
-    border: 2px solid #e9ecef;
-    border-radius: 8px;
-    background: #f8f9fa;
-    cursor: pointer;
-    transition: all 0.3s;
-    text-align: center;
-    font-size: 12px;
-    font-weight: 600;
-}
-
-.client-type-option:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 3px 8px rgba(0,0,0,0.1);
-}
-
-.client-type-option.selected {
-    background: linear-gradient(135deg, #2c3e50 0%, #4a6491 100%);
-    color: white;
-    border-color: #2c3e50;
-}
-
-.client-type-option.random {
-    grid-column: span 2;
-    background: linear-gradient(135deg, #667eea 0%, #5a67d8 100%);
-    color: white;
-    border-color: #5a67d8;
-}
-
-.adaptive-notice {
-    background: #e3f2fd;
-    border-left: 4px solid #1976d2;
-    padding: 10px 15px;
-    border-radius: 8px;
-    margin-bottom: 15px;
-    font-size: 12px;
-    color: #1976d2;
-}
-
-.trainer-search-section {
-    display: flex;
-    gap: 10px;
-    margin-bottom: 15px;
-    flex-wrap: wrap;
-}
-
-.trainer-search-input {
-    flex: 1;
-    min-width: 200px;
-    padding: 8px 12px;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    font-size: 13px;
-}
-
-.trainer-date-input {
-    padding: 8px 12px;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    font-size: 13px;
-    min-width: 150px;
-}
-
-.trainer-search-btn {
-    background: linear-gradient(135deg, #2c3e50 0%, #4a6491 100%);
-    color: white;
-    border: none;
-    padding: 8px 15px;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 13px;
-    font-weight: 600;
-    transition: all 0.3s;
-}
-
-.trainer-search-btn:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 3px 8px rgba(44, 62, 80, 0.2);
-}
-
-.vertical-group {
-    margin-bottom: 15px;
-    border: 1px solid #e9ecef;
-    border-radius: 10px;
-    overflow: hidden;
-}
-
-.vertical-header {
-    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-    padding: 12px 15px;
-    cursor: pointer;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-weight: 600;
-    color: #333;
-    font-size: 14px;
-    border-bottom: 1px solid #e9ecef;
-}
-
-.vertical-header:hover {
-    background: #e9ecef;
-}
-
-.vertical-content {
-    padding: 10px;
-    background: white;
-    max-height: 0;
-    overflow: hidden;
-    transition: max-height 0.3s ease-out;
-}
-
-.vertical-content.expanded {
-    max-height: 1000px;
-    transition: max-height 0.5s ease-in;
-}
-
-.vertical-count {
-    background: #4a6491;
-    color: white;
-    padding: 2px 8px;
-    border-radius: 12px;
-    font-size: 11px;
-    font-weight: 600;
-}
-
-.toggle-icon {
-    transition: transform 0.3s;
-}
-
-.toggle-icon.expanded {
-    transform: rotate(180deg);
-}
-
-.limit-badge {
-    display: inline-block;
-    padding: 2px 8px;
-    background: #e9ecef;
-    border-radius: 12px;
-    font-size: 11px;
-    font-weight: 600;
-    color: #666;
-    cursor: help;
-    border: 1px solid #ddd;
-    transition: all 0.3s;
-    margin-left: 10px;
-}
-
-.limit-badge.warning {
-    background: #fff3cd;
-    color: #856404;
-    border-color: #ffeaa7;
-}
-
-.limit-badge.danger {
-    background: #f8d7da;
-    color: #721c24;
-    border-color: #f5c6cb;
-}
-
-.limit-badge:hover {
-    transform: scale(1.05);
-}
-
-.footer-links {
-    display: flex;
-    justify-content: center;
-    gap: 20px;
-    padding: 15px;
-    border-top: 1px solid #e9ecef;
-    background: #f8f9fa;
-    border-radius: 0 0 16px 16px;
-}
-
-.footer-link {
-    font-size: 12px;
-    color: #666;
-    text-decoration: none;
-    opacity: 0.7;
-    transition: opacity 0.3s;
-}
-
-.footer-link:hover {
-    opacity: 1;
-    color: #2c3e50;
-}
-
-@media (max-width: 1024px) {
-    .training-container {
-        flex-direction: column;
-    }
-    
-    .scenario-section, .chat-section {
-        min-width: 100%;
-    }
-    
-    .sidebar {
-        width: 180px;
-    }
-    
-    .confidentiality-list {
-        grid-template-columns: 1fr;
-    }
-}
-
-@media (max-width: 768px) {
-    .container {
-        min-height: auto;
-    }
-    
-    .content {
-        flex-direction: column;
-    }
-    
-    .sidebar {
-        width: 100%;
-        order: 2;
-        border-right: none;
-        border-top: 1px solid #e9ecef;
-    }
-    
-    .stats-grid {
-        grid-template-columns: repeat(2, 1fr);
-    }
-    
-    .leaderboard-title {
-        flex-direction: column;
-        align-items: flex-start;
-    }
-    
-    .leaderboard-tabs {
-        width: 100%;
-        overflow-x: auto;
-        padding: 5px;
-    }
-    
-    .chat-modal .modal-content {
-        width: 95%;
-        max-height: 90vh;
-    }
-    
-    .client-type-selector {
-        grid-template-columns: 1fr;
-    }
-    
-    .client-type-option.random {
-        grid-column: span 1;
-    }
-    
-    .trainer-search-section {
-        flex-direction: column;
-    }
-    
-    .trainer-search-input,
-    .trainer-date-input,
-    .trainer-search-btn {
-        width: 100%;
-    }
-    
-    .footer-links {
-        flex-direction: column;
-        gap: 10px;
-        align-items: center;
-    }
-}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Диалоговый тренажер</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Модальное окно авторизации -->
+    <div class="modal" id="authModal">
+        <div class="modal-content">
+            <div class="result-icon">👤</div>
+            <h2 class="result-title">Диалоговый тренажер</h2>
+            <p style="margin-bottom: 20px; color: #666; font-size: 14px;">Войдите в систему для начала тренировок</p>
+            
+            <div id="loginForm">
+                <div class="form-group">
+                    <label>Никнейм:</label>
+                    <input type="text" id="loginUsername" placeholder="Введите ваш никнейм">
+                </div>
+                <div class="form-group">
+                    <label>Пароль:</label>
+                    <div class="password-container">
+                        <input type="password" id="loginPassword" placeholder="Введите пароль">
+                        <span class="password-toggle" onclick="togglePassword('loginPassword', this)">👁️</span>
+                    </div>
+                    <div class="error-message" id="loginError"></div>
+                </div>
+                <button class="btn btn-primary" onclick="handleLogin()" style="width: 100%; margin-bottom: 10px;">
+                    Войти
+                </button>
+                <button class="btn btn-secondary" onclick="showRegisterForm()" style="width: 100%; margin-bottom: 10px;">
+                    Создать аккаунт
+                </button>
+                <button class="btn btn-secondary" onclick="showResetPasswordForm()" style="width: 100%;">
+                    Забыли пароль?
+                </button>
+                <p style="text-align: center; margin: 15px 0; color: #666; font-size: 14px;">или</p>
+                <button class="btn btn-secondary" onclick="showTrainerLogin()" style="width: 100%;">
+                    Войти как тренер/СВ
+                </button>
+            </div>
+            
+            <div id="registerForm" style="display: none;">
+                <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px 15px; border-radius: 8px; margin-bottom: 15px;">
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px;">
+                        <i class="fas fa-exclamation-triangle" style="color: #856404;"></i>
+                        <strong style="color: #856404; font-size: 13px;">ВНИМАНИЕ!</strong>
+                    </div>
+                    <p style="font-size: 12px; color: #856404; margin: 0;">
+                        <strong>Запрещено:</strong> использовать реальные фамилии, матерные или оскорбительные слова в никнейме.<br>
+                        <strong>Рекомендуем:</strong> Оператор_1, Спец_Иван, Агент_007
+                    </p>
+                </div>
+                
+                <div class="form-group">
+                    <label>Никнейм (будет отображаться в системе):</label>
+                    <input type="text" id="registerUsername" placeholder="Придумайте никнейм (от 3 символов)">
+                </div>
+                <div class="form-group">
+                    <label>Вертикаль (отдел):</label>
+                    <select id="registerGroup" required>
+                        <option value="">Выберите вашу вертикаль</option>
+                        <option value="Программа лояльности">Программа лояльности</option>
+                        <option value="ОПК">ОПК</option>
+                        <option value="Фудтех">Фудтех</option>
+                        <option value="Маркет">Маркет</option>
+                        <option value="Аптека">Аптека</option>
+                        <option value="Сборка">Сборка</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Пароль:</label>
+                    <div class="password-container">
+                        <input type="password" id="registerPassword" placeholder="Пароль (от 6 символов)">
+                        <span class="password-toggle" onclick="togglePassword('registerPassword', this)">👁️</span>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Подтвердите пароль:</label>
+                    <div class="password-container">
+                        <input type="password" id="registerPasswordConfirm" placeholder="Повторите пароль">
+                        <span class="password-toggle" onclick="togglePassword('registerPasswordConfirm', this)">👁️</span>
+                    </div>
+                    <div class="error-message" id="passwordMatchError"></div>
+                </div>
+                
+                <div class="confidentiality-warning">
+                    <h4><i class="fas fa-exclamation-triangle"></i> ВНИМАНИЕ: Конфиденциальность данных</h4>
+                    <div class="confidentiality-list">
+                        <div class="prohibited">
+                            <strong>ЗАПРЕЩЕНО:</strong>
+                            <ul style="margin: 5px 0 0 15px; padding: 0;">
+                                <li>Конфиденциальная информация компании</li>
+                                <li>Персональные данные клиентов</li>
+                                <li>Банковские и паспортные данные</li>
+                            </ul>
+                        </div>
+                        <div class="recommended">
+                            <strong>РЕКОМЕНДАЦИИ:</strong>
+                            <ul style="margin: 5px 0 0 15px; padding: 0;">
+                                <li>Используйте вымышленные данные</li>
+                                <li>Не указывайте реальные номера</li>
+                                <li>Сохраняйте конфиденциальность</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                
+                <button class="btn btn-primary" onclick="handleRegister()" style="width: 100%; margin-bottom: 10px;">
+                    Зарегистрироваться
+                </button>
+                <button class="btn btn-secondary" onclick="showLoginForm()" style="width: 100%;">
+                    Назад ко входу
+                </button>
+            </div>
+
+            <div id="resetPasswordForm" style="display: none;">
+                <div class="form-group">
+                    <label>Никнейм:</label>
+                    <input type="text" id="resetUsername" placeholder="Введите никнейм">
+                </div>
+                <div class="form-group">
+                    <label>Новый пароль:</label>
+                    <div class="password-container">
+                        <input type="password" id="resetNewPassword" placeholder="Новый пароль (от 6 символов)">
+                        <span class="password-toggle" onclick="togglePassword('resetNewPassword', this)">👁️</span>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Подтвердите пароль:</label>
+                    <div class="password-container">
+                        <input type="password" id="resetPasswordConfirm" placeholder="Повторите пароль">
+                        <span class="password-toggle" onclick="togglePassword('resetPasswordConfirm', this)">👁️</span>
+                    </div>
+                    <div class="error-message" id="resetPasswordError"></div>
+                </div>
+                <button class="btn btn-primary" onclick="handleResetPassword()" style="width: 100%; margin-bottom: 10px;">
+                    Сбросить пароль
+                </button>
+                <button class="btn btn-secondary" onclick="showLoginForm()" style="width: 100%;">
+                    Назад ко входу
+                </button>
+            </div>
+
+            <div id="trainerLoginForm" style="display: none;">
+                <div class="result-icon">👨‍🏫</div>
+                <h2 class="result-title">Режим тренера</h2>
+                <p style="margin-bottom: 20px; color: #666; font-size: 14px;">Панель управления тренировками</p>
+                
+                <div class="form-group">
+                    <label>Логин тренера:</label>
+                    <input type="text" id="trainerUsername" placeholder="Введите логин тренера">
+                </div>
+                <div class="form-group">
+                    <label>Пароль:</label>
+                    <div class="password-container">
+                        <input type="password" id="trainerPassword" placeholder="Введите пароль тренера">
+                        <span class="password-toggle" onclick="togglePassword('trainerPassword', this)">👁️</span>
+                    </div>
+                    <div class="error-message" id="trainerLoginError"></div>
+                </div>
+                
+                <button class="btn btn-primary" onclick="handleTrainerLogin()" style="width: 100%; margin-bottom: 10px;">
+                    Войти как тренер/СВ
+                </button>
+                <button class="btn btn-secondary" onclick="showLoginForm()" style="width: 100%;">
+                    Назад к обычному входу
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно фидбэка -->
+    <div class="modal" id="feedbackModal">
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="result-icon">📝</div>
+            <h2 class="result-title">Пожалуйста, поделитесь впечатлениями от тренажера</h2>
+            <p style="margin-bottom: 20px; color: #666; font-size: 14px;">Ваше мнение поможет улучшить тренажер</p>
+            
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                <button class="btn btn-primary" onclick="openFeedbackForm()" style="width: 100%;">
+                    Заполнить форму
+                </button>
+                <button class="btn btn-secondary" onclick="closeFeedbackModal()" style="width: 100%;">
+                    Сделаю позже
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно просмотра чата -->
+    <div class="modal chat-modal" id="chatModal">
+        <div class="modal-content">
+            <div class="chat-modal-header">
+                <h3 id="chatModalTitle">Диалог с клиентом</h3>
+                <div class="chat-modal-info">
+                    <div>
+                        <strong>Тип клиента:</strong> <span id="chatModalClientType">-</span>
+                    </div>
+                    <div>
+                        <strong>Дата:</strong> <span id="chatModalDate">  </span>
+                    </div>
+                    <div>
+                        <strong>Оценка:</strong> <span id="chatModalScore">-</span>/5
+                    </div>
+                </div>
+            </div>
+            
+            <div class="chat-modal-messages" id="chatModalMessages"></div>
+            
+            <div class="chat-modal-footer">
+                <div class="storage-info">
+                    <i class="fas fa-info-circle"></i> История чатов хранится 30 дней
+                </div>
+                <button class="btn btn-secondary" onclick="closeChatModal()">
+                    Закрыть
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно результата -->
+    <div class="modal" id="resultModal">
+        <div class="modal-content">
+            <div class="result-icon" id="resultIcon">🏆</div>
+            <div class="result-title" id="resultTitle">Тренировка завершена!</div>
+            <div class="result-xp" id="resultXP">+0 XP</div>
+            <div id="resultDetails" style="text-align: left; margin: 15px 0; padding: 15px; background: #f8f9fa; border-radius: 8px; font-size: 13px;"></div>
+            
+            <div id="aiFeedbackContainer" style="display: none;">
+                <div class="ai-feedback-section">
+                    <div class="ai-feedback-title">
+                        <i class="fas fa-robot"></i>
+                        <span>Полная обратная связь от DeepSeek</span>
+                    </div>
+                    <div class="ai-feedback-content" id="aiFeedbackContent"></div>
+                </div>
+            </div>
+            
+            <button class="btn btn-primary" onclick="closeResultModal()" style="margin-top: 10px; width: 100%;">
+                Продолжить
+            </button>
+        </div>
+    </div>
+
+    <div class="container" id="mainContainer" style="display: none;">
+        <div class="header">
+            <div class="user-panel" id="userPanel">
+                <div class="user-info">
+                    <span id="currentUserName"></span>
+                    <span class="group-badge" id="userGroupBadge"></span>
+                </div>
+                <button class="logout-btn" onclick="logout()">Выйти</button>
+            </div>
+            
+            <h1>Диалоговый тренажер</h1>
+            <p id="headerSubtitle">Тренировка работы с клиентами</p>
+        </div>
+
+        <div class="content">
+            <div class="sidebar" id="sidebar"></div>
+            <div class="main-content"></div>
+        </div>
+        
+        <div class="footer-links">
+            <a href="https://forms.yandex.ru/u/696634f8d046880022dab232" target="_blank" class="footer-link">
+                Обратная связь по тренажеру
+            </a>
+            <a href="https://forms.yandex.ru/u/69663c041f1eb503751e7994" target="_blank" class="footer-link">
+                Сообщить об ошибке
+            </a>
+            <a href="https://forms.yandex.ru/u/69663c46e010db02b85ec117" target="_blank" class="footer-link">
+                Предложить идею
+            </a>
+        </div>
+    </div>
+
+    <!-- Модальное окно комментария тренера -->
+    <div class="modal" id="commentModal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="result-icon">💬</div>
+            <h2 class="result-title" id="commentModalTitle">Комментарий тренера</h2>
+            <div id="commentModalStudentInfo" style="margin-bottom: 15px; padding: 10px; background: #f8f9fa; border-radius: 8px;"></div>
+            
+            <div class="form-group">
+                <label>Комментарий:</label>
+                <textarea class="comment-input" id="commentText" placeholder="Введите комментарий к диалогу..."></textarea>
+            </div>
+            
+            <div id="existingComments" style="margin-bottom: 15px;"></div>
+            
+            <div style="display: flex; gap: 10px;">
+                <button class="btn btn-primary" onclick="submitComment()" style="flex: 1;">
+                    Отправить комментарий
+                </button>
+                <button class="btn btn-secondary" onclick="closeCommentModal()" style="flex: 1;">
+                    Закрыть
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

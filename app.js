@@ -1,7 +1,8 @@
+let feedbackShown = false;
 const SUPABASE_URL = 'https://lpoaqliycyuhvdrwuyxj.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_uxkhuA-ngwjNjfaZdHCs7Q_FXOQRrSD';
 const EDGE_FUNCTION_URL = 'https://lpoaqliycyuhvdrwuyxj.supabase.co/functions/v1/rapid-handler';
-        
+
 class SupabaseAuth {
     constructor() {
         this.currentUser = null;
@@ -11,36 +12,35 @@ class SupabaseAuth {
         this.supabaseKey = SUPABASE_ANON_KEY;
     }
     
-async supabaseRequest(endpoint, method = 'GET', body = null) {
-    try {
-        const response = await fetch('/api/supabase-proxy', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                endpoint: endpoint,
-                method: method,
-                body: body
-            })
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    async supabaseRequest(endpoint, method = 'GET', body = null) {
+        try {
+            const response = await fetch('/api/supabase-proxy', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    endpoint: endpoint,
+                    method: method,
+                    body: body
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            if (response.status === 204) {
+                return { success: true };
+            }
+            
+            const data = await response.json();
+            return data;
+        } catch (error) {
+            console.error('Supabase proxy error:', error);
+            throw error;
         }
-        
-        // Если статус 204 (No Content), возвращаем успех
-        if (response.status === 204) {
-            return { success: true };
-        }
-        
-        const data = await response.json();
-        return data;
-    } catch (error) {
-        console.error('Supabase proxy error:', error);
-        throw error;
     }
-}
     
     async loadPrompts() {
         try {
@@ -76,236 +76,212 @@ async supabaseRequest(endpoint, method = 'GET', body = null) {
         return hash.toString(36);
     }
     
-async register(username, group = '', password) {
-    try {
-        const existing = await this.supabaseRequest(`users?username=eq.${encodeURIComponent(username)}`);
-        
-        if (existing && existing.length > 0) {
-            return { success: false, message: 'Пользователь с таким никнеймом уже существует' };
-        }
-        
-        if (password.length < 6) {
-            return { success: false, message: 'Пароль должен быть не менее 6 символов' };
-        }
-        
-        const passwordHash = this.hashPassword(password);
-        
-        const newUser = {
-            username: username.trim(),
-            group_name: group.trim(),
-            password_hash: passwordHash,
-            role: 'user',
-            stats: JSON.stringify({
-                currentLevel: 1,
-                totalXP: 0,
-                completedSessions: 0,
-                totalScore: 0,
-                averageScore: 0,
-                currentStreak: 0,
-                lastTrainingDate: null,
-                registrationDate: new Date().toISOString(),
-                achievementsUnlocked: ["first_blood"],
-                clientTypesCompleted: {
-                    aggressive: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
-                    passive: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
-                    demanding: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
-                    indecisive: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
-                    chatty: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 }
-                },
-                trainingHistory: [],
-                vertical: group.trim(),
-                trainerComments: [],
-                dailySessions: 0,
-                lastSessionDate: null
-            })
-        };
-        
-const response = await fetch('/api/supabase-proxy', {
-    method: 'POST',
-    headers: {
-        'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-        endpoint: 'users',
-        method: 'POST',
-        body: newUser,
-        headers: {
-            'Prefer': 'return=representation'
-        }
-    })
-});
-        
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error('Ошибка регистрации:', errorText);
-            return { success: false, message: 'Ошибка регистрации' };
-        }
-        
-        
-        return { 
-            success: true, 
-            message: 'Регистрация успешна! Теперь войдите в систему.' 
-        };
-    } catch (error) {
-        console.error('Ошибка регистрации:', error);
-        return { success: false, message: 'Ошибка соединения с базой данных' };
-    }
-}
-
-async login(username, password) {
-    try {
-        const users = await this.supabaseRequest(`users?username=eq.${encodeURIComponent(username)}`);
-        
-        if (!users || users.length === 0) {
-            return { success: false, message: 'Пользователь не найден' };
-        }
-        
-        const user = users[0];
-        const passwordHash = this.hashPassword(password);
-        
-        if (user.password_hash !== passwordHash) {
-            return { success: false, message: 'Неверный пароль' };
-        }
-        
-        // Парсим stats из строки JSON
-        let userStats;
+    async register(username, group = '', password) {
         try {
-            userStats = typeof user.stats === 'string' ? JSON.parse(user.stats) : user.stats;
-        } catch (e) {
-            userStats = {
-                currentLevel: 1,
-                totalXP: 0,
-                completedSessions: 0,
-                totalScore: 0,
-                averageScore: 0,
-                currentStreak: 0,
-                lastTrainingDate: null,
-                registrationDate: new Date().toISOString(),
-                achievementsUnlocked: ["first_blood"],
-                clientTypesCompleted: {
-                    aggressive: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
-                    passive: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
-                    demanding: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
-                    indecisive: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
-                    chatty: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 }
-                },
-                trainingHistory: [],
-                vertical: user.group_name,
-                trainerComments: [],
-                dailySessions: 0,
-                lastSessionDate: null
+            const existing = await this.supabaseRequest(`users?username=eq.${encodeURIComponent(username)}`);
+            
+            if (existing && existing.length > 0) {
+                return { success: false, message: 'Пользователь с таким никнеймом уже существует' };
+            }
+            
+            if (password.length < 6) {
+                return { success: false, message: 'Пароль должен быть не менее 6 символов' };
+            }
+            
+            const passwordHash = this.hashPassword(password);
+            
+            const newUser = {
+                username: username.trim(),
+                group_name: group.trim(),
+                password_hash: passwordHash,
+                role: 'user',
+                stats: JSON.stringify({
+                    currentLevel: 1,
+                    totalXP: 0,
+                    completedSessions: 0,
+                    totalScore: 0,
+                    averageScore: 0,
+                    currentStreak: 0,
+                    lastTrainingDate: null,
+                    registrationDate: new Date().toISOString(),
+                    achievementsUnlocked: ["first_blood"],
+                    clientTypesCompleted: {
+                        aggressive: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
+                        passive: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
+                        demanding: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
+                        indecisive: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
+                        chatty: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 }
+                    },
+                    trainingHistory: [],
+                    vertical: group.trim(),
+                    trainerComments: [],
+                    dailySessions: 0,
+                    lastSessionDate: null
+                })
             };
-        }
-        
-        this.currentUser = {
-            id: user.id,
-            username: user.username,
-            group: user.group_name,
-            role: user.role || 'user',
-            stats: userStats
-        };
-        
-        this.userRole = this.currentUser.role;
-        this.isAuthenticated = true;
-        localStorage.setItem('dialogue_currentUser', JSON.stringify(this.currentUser));
-        
-        return { 
-            success: true, 
-            user: this.currentUser,
-            message: 'Вход выполнен успешно'
-        };
-    } catch (error) {
-        console.error('Ошибка входа:', error);
-        return { success: false, message: 'Ошибка соединения с базой данных' };
-    }
-}
-
-async resetPassword(username, newPassword) {
-    try {
-        const users = await this.supabaseRequest(`users?username=eq.${encodeURIComponent(username)}`);
-        
-        if (!users || users.length === 0) {
-            return { success: false, message: 'Пользователь не найден' };
-        }
-        
-        const user = users[0];
-        const passwordHash = this.hashPassword(newPassword);
-        
- await fetch('/api/supabase-proxy', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-        endpoint: `users?id=eq.${user.id}`,
-        method: 'PATCH',
-        body: { password_hash: passwordHash },
-        headers: {
-            'Prefer': 'return=representation'
-        }
-    })
-});
-        
-        return { success: true, message: 'Пароль успешно изменен' };
-    } catch (error) {
-        console.error('Ошибка сброса пароля:', error);
-        return { success: false, message: 'Ошибка изменения пароля' };
-    }
-}
             
-async saveUserStats(stats) {
-    console.log('🔍 saveUserStats ВЫЗВАНА');
-    console.log('ID пользователя:', this.currentUser.id);
-    
-    if (!this.currentUser || !this.currentUser.id) {
-        console.error('❌ Нет пользователя для сохранения');
-        return false;
-    }
-    
-    try {
-        const statsJson = JSON.stringify(stats);
-
-const response = await fetch('/api/supabase-proxy', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-        endpoint: `users?id=eq.${this.currentUser.id}`,
-        method: 'PATCH',
-        body: { stats: statsJson },
-        headers: {
-            'Prefer': 'return=representation',
-            'Cache-Control': 'no-cache'
-        }
-    })
-});
-        
-        console.log('📤 Ответ от Supabase:', response.status);
-        
-        if (response.ok) {
-            console.log('✅ Данные отправлены');
-            
-            // ЗАПРАШИВАЕМ ДАННЫЕ СНОВА С ЗАГЛОВКОМ ПРОТИВ КЭША
-            const checkResponse = await fetch(`${this.supabaseUrl}/rest/v1/users?id=eq.${this.currentUser.id}&select=*`, {
+            const response = await fetch('/api/supabase-proxy', {
+                method: 'POST',
                 headers: {
-                    'apikey': this.supabaseKey,
-                    'Authorization': `Bearer ${this.supabaseKey}`,
-                    'Cache-Control': 'no-cache'  // <-- ДОБАВЛЕНО
-                }
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    endpoint: 'users',
+                    method: 'POST',
+                    body: newUser,
+                    headers: {
+                        'Prefer': 'return=representation'
+                    }
+                })
             });
             
-            if (checkResponse.ok) {
-                const updatedData = await checkResponse.json();
-                console.log('🔍 ОБНОВЛЕННЫЕ данные из БД:', updatedData[0]);
-                
-                // СРАЗУ обновляем локального пользователя
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('Ошибка регистрации:', errorText);
+                return { success: false, message: 'Ошибка регистрации' };
+            }
+            
+            return { 
+                success: true, 
+                message: 'Регистрация успешна! Теперь войдите в систему.' 
+            };
+        } catch (error) {
+            console.error('Ошибка регистрации:', error);
+            return { success: false, message: 'Ошибка соединения с базой данных' };
+        }
+    }
+
+    async login(username, password) {
+        try {
+            const users = await this.supabaseRequest(`users?username=eq.${encodeURIComponent(username)}`);
+            
+            if (!users || users.length === 0) {
+                return { success: false, message: 'Пользователь не найден' };
+            }
+            
+            const user = users[0];
+            const passwordHash = this.hashPassword(password);
+            
+            if (user.password_hash !== passwordHash) {
+                return { success: false, message: 'Неверный пароль' };
+            }
+            
+            let userStats;
+            try {
+                userStats = typeof user.stats === 'string' ? JSON.parse(user.stats) : user.stats;
+            } catch (e) {
+                userStats = {
+                    currentLevel: 1,
+                    totalXP: 0,
+                    completedSessions: 0,
+                    totalScore: 0,
+                    averageScore: 0,
+                    currentStreak: 0,
+                    lastTrainingDate: null,
+                    registrationDate: new Date().toISOString(),
+                    achievementsUnlocked: ["first_blood"],
+                    clientTypesCompleted: {
+                        aggressive: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
+                        passive: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
+                        demanding: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
+                        indecisive: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
+                        chatty: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 }
+                    },
+                    trainingHistory: [],
+                    vertical: user.group_name,
+                    trainerComments: [],
+                    dailySessions: 0,
+                    lastSessionDate: null
+                };
+            }
+            
+            this.currentUser = {
+                id: user.id,
+                username: user.username,
+                group: user.group_name,
+                role: user.role || 'user',
+                stats: userStats
+            };
+            
+            this.userRole = this.currentUser.role;
+            this.isAuthenticated = true;
+            localStorage.setItem('dialogue_currentUser', JSON.stringify(this.currentUser));
+            
+            return { 
+                success: true, 
+                user: this.currentUser,
+                message: 'Вход выполнен успешно'
+            };
+        } catch (error) {
+            console.error('Ошибка входа:', error);
+            return { success: false, message: 'Ошибка соединения с базой данных' };
+        }
+    }
+
+    async resetPassword(username, newPassword) {
+        try {
+            const users = await this.supabaseRequest(`users?username=eq.${encodeURIComponent(username)}`);
+            
+            if (!users || users.length === 0) {
+                return { success: false, message: 'Пользователь не найден' };
+            }
+            
+            const user = users[0];
+            const passwordHash = this.hashPassword(newPassword);
+            
+            await fetch('/api/supabase-proxy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    endpoint: `users?id=eq.${user.id}`,
+                    method: 'PATCH',
+                    body: { password_hash: passwordHash },
+                    headers: {
+                        'Prefer': 'return=representation'
+                    }
+                })
+            });
+            
+            return { success: true, message: 'Пароль успешно изменен' };
+        } catch (error) {
+            console.error('Ошибка сброса пароля:', error);
+            return { success: false, message: 'Ошибка изменения пароля' };
+        }
+    }
+            
+    async saveUserStats(stats) {
+        if (!this.currentUser || !this.currentUser.id) {
+            console.error('Нет пользователя для сохранения');
+            return false;
+        }
+        
+        try {
+            const statsJson = JSON.stringify(stats);
+
+            const response = await fetch('/api/supabase-proxy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    endpoint: `users?id=eq.${this.currentUser.id}`,
+                    method: 'PATCH',
+                    body: { stats: statsJson },
+                    headers: {
+                        'Prefer': 'return=representation',
+                        'Cache-Control': 'no-cache'
+                    }
+                })
+            });
+            
+            if (response.ok) {
                 this.currentUser.stats = stats;
                 return true;
             }
+            return false;
+        } catch (error) {
+            console.error('Ошибка:', error);
+            return false;
         }
-        return false;
-    } catch (error) {
-        console.error('❌ Ошибка:', error);
-        return false;
     }
-}
             
     async addTrainingSession(sessionData) {
         if (!this.currentUser) return false;
@@ -355,99 +331,96 @@ const response = await fetch('/api/supabase-proxy', {
     }
     
     async getLeaderboard(filterVertical = 'all') {
-    try {
-        const users = await this.supabaseRequest('users?select=id,username,group_name,stats');
-        
-        if (!users || users.length === 0) {
+        try {
+            const users = await this.supabaseRequest('users?select=id,username,group_name,stats');
+            
+            if (!users || users.length === 0) {
+                return [];
+            }
+            
+            const leaderboard = users
+                .filter(user => {
+                    if (filterVertical === 'all') return true;
+                    return user.group_name === filterVertical;
+                })
+                .map(user => {
+                    let userStats;
+                    try {
+                        userStats = typeof user.stats === 'string' ? 
+                            JSON.parse(user.stats) : 
+                            (user.stats || {});
+                    } catch (e) {
+                        userStats = {};
+                    }
+                    
+                    return {
+                        id: user.id,
+                        username: user.username,
+                        group: user.group_name || 'Без вертикали',
+                        level: userStats.currentLevel || 1,
+                        sessions: userStats.completedSessions || 0,
+                        avgScore: userStats.averageScore || 0,
+                        xp: userStats.totalXP || 0
+                    };
+                })
+                .sort((a, b) => b.xp - a.xp);
+            
+            return leaderboard.slice(0, 100);
+        } catch (error) {
+            console.error('Ошибка получения рейтинга:', error);
             return [];
         }
-        
-        // Преобразуем данные в правильный формат
-        const leaderboard = users
-            .filter(user => {
-                if (filterVertical === 'all') return true;
-                return user.group_name === filterVertical;
-            })
-            .map(user => {
-                // Парсим stats из JSON
-                let userStats;
-                try {
-                    userStats = typeof user.stats === 'string' ? 
-                        JSON.parse(user.stats) : 
-                        (user.stats || {});
-                } catch (e) {
-                    userStats = {};
-                    console.warn('Ошибка парсинга stats для пользователя', user.username, e);
-                }
-                
-                return {
-                    id: user.id,
-                    username: user.username,
-                    group: user.group_name || 'Без вертикали',
-                    level: userStats.currentLevel || 1,
-                    sessions: userStats.completedSessions || 0,
-                    avgScore: userStats.averageScore || 0,
-                    xp: userStats.totalXP || 0
-                };
-            })
-            .sort((a, b) => b.xp - a.xp);
-        
-        return leaderboard.slice(0, 100);
-    } catch (error) {
-        console.error('❌ Ошибка получения рейтинга:', error);
-        return [];
     }
-}
             
-async getSystemStats() {
-    try {
-        const users = await this.supabaseRequest('users?select=id,stats');
-        const sessions = await this.supabaseRequest('training_sessions?select=id,score,date,user_id');
-        
-        const today = new Date().toISOString().split('T')[0];
-        const activeToday = new Set();
-        
-        if (sessions && Array.isArray(sessions)) {
-            sessions.forEach(session => {
-                if (session.date && session.date.includes(today)) {
-                    activeToday.add(session.user_id);
-                }
-            });
+    async getSystemStats() {
+        try {
+            const users = await this.supabaseRequest('users?select=id,stats');
+            const sessions = await this.supabaseRequest('training_sessions?select=id,score,date,user_id');
+            
+            const today = new Date().toISOString().split('T')[0];
+            const activeToday = new Set();
+            
+            if (sessions && Array.isArray(sessions)) {
+                sessions.forEach(session => {
+                    if (session.date && session.date.includes(today)) {
+                        activeToday.add(session.user_id);
+                    }
+                });
+            }
+            
+            const totalSessions = sessions?.length || 0;
+            const totalUsers = users?.length || 0;
+            
+            let totalScore = 0;
+            let scoreCount = 0;
+            
+            if (sessions && Array.isArray(sessions)) {
+                sessions.forEach(session => {
+                    if (session.score) {
+                        totalScore += session.score;
+                        scoreCount++;
+                    }
+                });
+            }
+            
+            const avgScore = scoreCount > 0 ? (totalScore / scoreCount) : 0;
+            
+            return {
+                totalUsers,
+                totalSessions,
+                avgScore,
+                activeToday: activeToday.size
+            };
+        } catch (error) {
+            console.error('Ошибка получения статистики системы:', error);
+            return {
+                totalUsers: 0,
+                totalSessions: 0,
+                avgScore: 0,
+                activeToday: 0
+            };
         }
-        
-        const totalSessions = sessions?.length || 0;
-        const totalUsers = users?.length || 0;
-        
-        let totalScore = 0;
-        let scoreCount = 0;
-        
-        if (sessions && Array.isArray(sessions)) {
-            sessions.forEach(session => {
-                if (session.score) {
-                    totalScore += session.score;
-                    scoreCount++;
-                }
-            });
-        }
-        
-        const avgScore = scoreCount > 0 ? (totalScore / scoreCount) : 0;
-        
-        return {
-            totalUsers,
-            totalSessions,
-            avgScore,
-            activeToday: activeToday.size
-        };
-    } catch (error) {
-        console.error('❌ Ошибка получения статистики системы:', error);
-        return {
-            totalUsers: 0,
-            totalSessions: 0,
-            avgScore: 0,
-            activeToday: 0
-        };
     }
-}
             
     async getUserTrainingHistory(userId) {
         try {
@@ -514,18 +487,18 @@ async getSystemStats() {
         const headerSubtitle = document.getElementById('headerSubtitle');
         
         if (this.userRole === 'trainer') {
-            headerTitle.innerHTML = '🎅 Панель тренера';
+            headerTitle.innerHTML = 'Панель тренера';
             headerSubtitle.textContent = `Тренер: ${this.currentUser.username}`;
         } else {
-            headerTitle.innerHTML = '🎄 Диалоговый тренажер';
-            headerSubtitle.textContent = 'Новогодняя тренировка работы с клиентами 🎁';
+            headerTitle.innerHTML = 'Диалоговый тренажер';
+            headerSubtitle.textContent = 'Тренировка работы с клиентами';
         }
         
         document.getElementById('currentUserName').textContent = this.currentUser.username;
         const groupBadge = document.getElementById('userGroupBadge');
         
         if (this.userRole === 'trainer') {
-            groupBadge.textContent = '🎅 Тренер';
+            groupBadge.textContent = 'Тренер';
             groupBadge.style.backgroundColor = '#155d27';
             groupBadge.style.color = 'white';
         } else if (this.currentUser.group) {
@@ -585,7 +558,6 @@ const levels = [
     { level: 7, name: "Легенда", requiredXP: 2200, badge: "⭐" }
 ];
 
-// ИСПРАВЛЕННЫЙ СПИСОК ДОСТИЖЕНИЙ С ПРАВИЛЬНОЙ ЛОГИКОЙ
 const achievements = [
     { id: "first_blood", name: "Первая кровь", icon: "🎯", description: "Пройдите первую тренировку", category: "базовые", condition: "sessions >= 1" },
     { id: "quick_start", name: "Быстрый старт", icon: "⚡", description: "Пройдите 3 тренировки за неделю", category: "активность", condition: "weekly_sessions >= 3" },
@@ -675,7 +647,6 @@ function getPromptForVertical(vertical) {
 }
 
 let selectedClientType = null;
-let currentScenario = null;
 let currentPrompt = null;
 let trainingInProgress = false;
 let trainingStartTime = null;
@@ -690,9 +661,6 @@ let dailySessionsUsed = 0;
 let lastResetTime = null;
 
 async function sendPromptToAI() {
-    console.log('🚀 Отправляю промт в AI...');
-    console.log('Текущий промт:', currentPrompt?.substring(0, 100));
-    
     try {
         const systemMessage = {
             role: "system",
@@ -714,8 +682,6 @@ async function sendPromptToAI() {
 
 В остальных случаях - просто продолжай диалог как клиент.`
         };
-        
-        console.log('📤 Системный промт для AI:', systemMessage.content.substring(0, 200));
         
         const messageHistory = chatMessages.map(msg => ({
             role: msg.sender === 'user' ? 'user' : 'assistant',
@@ -745,7 +711,6 @@ async function sendPromptToAI() {
         
         if (data.choices && data.choices[0] && data.choices[0].message) {
             const aiResponse = data.choices[0].message.content;
-            console.log('📥 Ответ от AI:', aiResponse.substring(0, 200));
             addMessage('ai', aiResponse);
             
             if (aiResponse.includes('ОЦЕНКА:') || aiResponse.match(/\d+\s*\/\s*5/)) {
@@ -756,8 +721,8 @@ async function sendPromptToAI() {
         }
         
     } catch (error) {
-        console.error('❌ Ошибка:', error);
-        addMessage('ai', '⚠️ Ошибка соединения. Попробуйте начать тренировку заново.');
+        console.error('Ошибка:', error);
+        addMessage('ai', 'Ошибка соединения. Попробуйте начать тренировку заново.');
         resetTrainingState();
     }
 }
@@ -884,7 +849,7 @@ function loadStudentInterface() {
             <div class="welcome-section">
                 <div class="section-title">
                     <i class="fas fa-bullhorn"></i>
-                    <span>Добро пожаловать в новогодний тренажер! 🎄</span>
+                    <span>Добро пожаловать в диалоговый тренажер!</span>
                 </div>
                 
                 <div class="confidentiality-warning">
@@ -912,7 +877,7 @@ function loadStudentInterface() {
                 <div class="news-section" id="newsSection">
                     <div class="news-title">
                         <i class="fas fa-newspaper"></i>
-                        <span>Новогодние новости тренажера 🎅</span>
+                        <span>Новости тренажера</span>
                     </div>
                     <div class="news-grid" id="newsGrid"></div>
                 </div>
@@ -962,7 +927,7 @@ function loadStudentInterface() {
                 </div>
                 
                 <div class="action-buttons">
-                    <button class="btn btn-primary btn-newyear" onclick="switchTab('training')">
+                    <button class="btn btn-primary" onclick="switchTab('training')">
                         <i class="fas fa-play-circle"></i> Начать тренировку
                     </button>
                 </div>
@@ -1013,13 +978,11 @@ function loadStudentInterface() {
                         </div>
                         
                         <div class="action-buttons" id="actionButtons">
-                            <button class="btn btn-primary btn-newyear" id="startTrainingBtn" onclick="startTraining()" disabled>
-                                <span>🎄</span>
+                            <button class="btn btn-primary" id="startTrainingBtn" onclick="startTraining()" disabled>
                                 Начать тренировку
                             </button>
                             <button class="btn btn-secondary" id="endTrainingBtn" onclick="finishChat()">
-                            <span>🎁</span>
-                            Завершить тренировку
+                                Завершить тренировку
                             </button>
                             <div class="training-timer" id="trainingTimer"></div>
                         </div>
@@ -1028,13 +991,13 @@ function loadStudentInterface() {
 
                 <div class="chat-section">
                     <div class="chat-header">
-                        <div class="chat-title">💬 Новогодний тренировочный чат</div>
+                        <div class="chat-title">💬 Тренировочный чат</div>
                         <div class="chat-status" id="chatStatus">Ожидание начала</div>
                     </div>
                     
                     <div class="chat-messages" id="chatMessages">
                         <div class="message ai">
-                            Привет! 🎅 Я готов к тренировке. Выберите тип клиента, чтобы начать тренировку.
+                            Привет! Я готов к тренировке. Выберите тип клиента, чтобы начать тренировку.
                         </div>
                     </div>
                     
@@ -1048,7 +1011,7 @@ function loadStudentInterface() {
                                 onkeydown="handleChatInput(event)"
                                 disabled
                             ></textarea>
-                            <button class="send-btn btn-newyear" id="sendBtn" onclick="sendMessage()" disabled>
+                            <button class="send-btn" id="sendBtn" onclick="sendMessage()" disabled>
                                 Отправить
                             </button>
                         </div>
@@ -1240,7 +1203,7 @@ async function startTraining() {
     chatMessagesDiv.innerHTML = '';
     
     const clientType = clientTypes[selectedClientType];
-    const initialMessage = `🎄 Тренировка началась! Вы работаете с ${clientType.name.toLowerCase()} в вертикали "${auth.currentUser.group}".`;
+    const initialMessage = `Тренировка началась! Вы работаете с ${clientType.name.toLowerCase()} в вертикали "${auth.currentUser.group}".`;
     addMessage('ai', initialMessage);
     
     await sendPromptToAI();
@@ -1284,12 +1247,10 @@ function endTraining() {
     const evaluation = evaluateDialogue(chatMessages, selectedClientType);
     const clientType = clientTypes[selectedClientType];
     
-    // Проверяем, есть ли оценка от AI в последнем сообщении
     const lastAIMessage = chatMessages.filter(msg => msg.sender === 'ai').pop();
     if (lastAIMessage && lastAIMessage.text) {
         lastAIFeedback = extractAIFeedback(lastAIMessage.text);
         if (lastAIFeedback.includes('ОЦЕНКА:') || lastAIFeedback.match(/\d+\s*\/\s*5/)) {
-            // Используем оценку от AI
             const aiScoreMatch = lastAIFeedback.match(/(\d+)\s*\/\s*5/);
             if (aiScoreMatch) {
                 evaluation.score = parseInt(aiScoreMatch[1]);
@@ -1307,9 +1268,9 @@ function endTraining() {
         lastAIFeedback
     ).then(result => {
         showResultModal(
-            `🎉 Тренировка завершена!`,
+            `Тренировка завершена!`,
             `${clientType.name} (${auth.currentUser.group})`,
-            evaluation.score >= 4 ? "🎁" : "📝",
+            evaluation.score >= 4 ? "🏆" : "📝",
             result.xp,
             evaluation,
             duration,
@@ -1451,13 +1412,13 @@ function evaluateDialogue(messages, clientType) {
     let feedback = "";
     
     if (roundedScore >= 4.5) {
-        feedback = "🎅 Отличная работа! Вы профессионально справились с клиентом.";
+        feedback = "Отличная работа! Вы профессионально справились с клиентом.";
     } else if (roundedScore >= 4.0) {
-        feedback = "✨ Хорошая работа! Вы хорошо адаптировались к типу клиента.";
+        feedback = "Хорошая работа! Вы хорошо адаптировались к типу клиента.";
     } else if (roundedScore >= 3.0) {
-        feedback = "🌟 Неплохо! Есть потенциал для улучшения.";
+        feedback = "Неплохо! Есть потенциал для улучшения.";
     } else {
-        feedback = "🎯 Попробуйте быть более активным и внимательным к клиенту.";
+        feedback = "Попробуйте быть более активным и внимательным к клиенту.";
     }
     
     return {
@@ -1477,26 +1438,16 @@ function evaluateDialogue(messages, clientType) {
 
 async function awardXP(score, scenario, clientType, evaluation, duration, aiFeedback = "") {
     if (!auth.currentUser) {
-        console.error('❌ Нет пользователя!');
+        console.error('Нет пользователя!');
         return { xp: 0, session: null };
     }
     
-    console.log('🎯 НАЧАЛО awardXP');
-    console.log('Пользователь:', auth.currentUser.username);
-    console.log('Оценка:', score);
-    console.log('Тип клиента:', clientType);
-    console.log('Длительность:', duration);
-    console.log('Текущая статистика ДО обновления:', auth.currentUser.stats);
-    
-    // Проверяем дневной лимит
     if (dailySessionsUsed >= dailyLimit) {
         alert('Лимит тренировок на сегодня исчерпан');
         return { xp: 0, session: null };
     }
     
-    // 1. Вычисляем XP
     let xpEarned = 50;
-    console.log('Базовый XP:', xpEarned);
     
     if (score === 5) xpEarned += 30;
     else if (score >= 4.5) xpEarned += 20;
@@ -1504,37 +1455,44 @@ async function awardXP(score, scenario, clientType, evaluation, duration, aiFeed
     else if (score >= 3.5) xpEarned += 10;
     else if (score >= 3) xpEarned += 5;
     
-    console.log('Итоговый XP:', xpEarned);
-    
-    // 2. Получаем статистику пользователя
     const userStats = auth.currentUser.stats;
     
-    // Инициализируем статистику, если она пустая
     if (!userStats) {
-        auth.currentUser.stats = auth.getDefaultStats();
+        auth.currentUser.stats = {
+            currentLevel: 1,
+            totalXP: 0,
+            completedSessions: 0,
+            totalScore: 0,
+            averageScore: 0,
+            currentStreak: 0,
+            lastTrainingDate: null,
+            registrationDate: new Date().toISOString(),
+            achievementsUnlocked: ["first_blood"],
+            clientTypesCompleted: {
+                aggressive: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
+                passive: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
+                demanding: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
+                indecisive: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
+                chatty: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 }
+            },
+            trainingHistory: [],
+            vertical: auth.currentUser.group,
+            trainerComments: [],
+            dailySessions: 0,
+            lastSessionDate: null
+        };
         return await awardXP(score, scenario, clientType, evaluation, duration, aiFeedback);
     }
     
-    console.log('Статистика ДО обновления:', userStats);
-    console.log('Было totalXP:', userStats.totalXP);
-    console.log('Было сессий:', userStats.completedSessions);
-    
-    // 3. Обновляем дневной лимит
     dailySessionsUsed++;
     userStats.dailySessions = dailySessionsUsed;
     userStats.lastSessionDate = new Date().toISOString();
     
-    // 4. Обновляем основную статистику
     userStats.totalXP = (userStats.totalXP || 0) + xpEarned;
     userStats.completedSessions = (userStats.completedSessions || 0) + 1;
     userStats.totalScore = (userStats.totalScore || 0) + score;
     userStats.averageScore = userStats.completedSessions > 0 ? userStats.totalScore / userStats.completedSessions : 0;
     
-    console.log('Стало totalXP:', userStats.totalXP);
-    console.log('Стало сессий:', userStats.completedSessions);
-    console.log('Стало totalScore:', userStats.totalScore);
-    
-    // 5. Обновляем статистику по типу клиента
     if (clientType) {
         if (!userStats.clientTypesCompleted) {
             userStats.clientTypesCompleted = {
@@ -1555,7 +1513,6 @@ async function awardXP(score, scenario, clientType, evaluation, duration, aiFeed
         }
     }
     
-    // 6. Обновляем стрик
     const today = new Date().toISOString().split('T')[0];
     if (userStats.lastTrainingDate !== today) {
         const lastDate = userStats.lastTrainingDate ? new Date(userStats.lastTrainingDate) : null;
@@ -1569,7 +1526,6 @@ async function awardXP(score, scenario, clientType, evaluation, duration, aiFeed
         userStats.lastTrainingDate = today;
     }
     
-    // 7. Создаем данные сессии
     const sessionData = {
         date: new Date().toISOString(),
         scenario: scenario,
@@ -1586,46 +1542,32 @@ async function awardXP(score, scenario, clientType, evaluation, duration, aiFeed
         trainer_comments: []
     };
     
-    // Добавляем в историю тренировок
     if (!userStats.trainingHistory) {
         userStats.trainingHistory = [];
     }
     userStats.trainingHistory.unshift(sessionData);
     
-    console.log('💾 СОХРАНЯЕМ В SUPABASE...');
-    console.log('Обновленная статистика:', userStats);
-    
-    // 8. Сохраняем в Supabase
     try {
         const saveResult = await auth.saveUserStats(userStats);
-        console.log('Результат сохранения статистики:', saveResult);
-        
         if (!saveResult) {
-            console.error('❌ Не удалось сохранить статистику в Supabase!');
-            // Сохраняем в localStorage как резерв
             localStorage.setItem('dialogue_currentUser', JSON.stringify(auth.currentUser));
         }
     } catch (error) {
-        console.error('❌ Ошибка при сохранении статистики:', error);
-        // Сохраняем в localStorage как резерв
+        console.error('Ошибка при сохранении статистики:', error);
         localStorage.setItem('dialogue_currentUser', JSON.stringify(auth.currentUser));
     }
     
-    // 9. Сохраняем сессию отдельно
     try {
-        const sessionResult = await auth.addTrainingSession({
+        await auth.addTrainingSession({
             ...sessionData,
             clientType: clientType
         });
-        console.log('Результат сохранения сессии:', sessionResult);
     } catch (error) {
-        console.error('❌ Ошибка при сохранении сессии:', error);
+        console.error('Ошибка при сохранении сессии:', error);
     }
     
-    // 10. Обновляем локальные данные
     auth.currentUser.stats = userStats;
     
-    // 11. Обновляем интерфейс
     updateDailyLimitNotification();
     checkAchievements(score, clientType, duration);
     updateProgressUI();
@@ -1633,9 +1575,6 @@ async function awardXP(score, scenario, clientType, evaluation, duration, aiFeed
     renderHistory();
     renderProgressChart();
     loadSystemStats();
-    
-    console.log('✅ awardXP завершена успешно!');
-    console.log('Итоговая статистика:', auth.currentUser.stats);
     
     return {
         xp: xpEarned,
@@ -1678,9 +1617,9 @@ function checkForEvaluationInResponse(response) {
                 awardXP(foundScore, clientTypes[selectedClientType]?.description || '', selectedClientType, evaluation.feedback, duration, lastAIFeedback)
                     .then(result => {
                         showResultModal(
-                            `🎉 Тренировка завершена!`,
+                            `Тренировка завершена!`,
                             `Клиент оценил вашу работу на ${foundScore}/5`,
-                            foundScore >= 4 ? "🎁" : "📝",
+                            foundScore >= 4 ? "🏆" : "📝",
                             result.xp,
                             evaluation,
                             duration,
@@ -1701,7 +1640,7 @@ function checkLevelUp() {
     const nextLevel = levels.find(l => l.level === userStats.currentLevel + 1);
     if (nextLevel && userStats.totalXP >= nextLevel.requiredXP) {
         userStats.currentLevel++;
-        showResultModal(`🎉 Уровень повышен!`, `Теперь вы ${levels.find(l => l.level === userStats.currentLevel).name}!`, "🆙", 0, {score: 5, feedback: "Поздравляем с повышением уровня!"}, 0, "");
+        showResultModal(`Уровень повышен!`, `Теперь вы ${levels.find(l => l.level === userStats.currentLevel).name}!`, "🆙", 0, {score: 5, feedback: "Поздравляем с повышением уровня!"}, 0, "");
         auth.saveUserStats(userStats);
         updateProgressUI();
     }
@@ -1713,40 +1652,31 @@ function checkAchievements(score, clientType, duration) {
     const newAchievements = [];
     const userStats = auth.currentUser.stats;
     
-    // Рассчитываем дополнительные статистики
     const today = new Date();
     const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
     const monthAgo = new Date();
     monthAgo.setMonth(monthAgo.getMonth() - 1);
     
-    // Тренировки за неделю
     const weeklySessions = userStats.trainingHistory?.filter(session => 
         new Date(session.date) >= weekAgo
     ).length || 0;
     
-    // Тренировки за месяц
     const monthlySessions = userStats.trainingHistory?.filter(session => 
         new Date(session.date) >= monthAgo
     ).length || 0;
     
-    // Проверяем ранги
     let verticalRank = 999;
     let globalRank = 999;
     
-    // Проверяем тренировку до 9 утра
     const hour = today.getHours();
     const trainingBefore9am = hour < 9;
     
-    // Проверяем тренировку после 22 вечера
     const trainingAfter10pm = hour >= 22;
     
-    // Проверяем выходной день
     const isWeekend = today.getDay() === 0 || today.getDay() === 6;
     
-    // Проверяем быструю тренировку
     const quickTraining = duration < 180 && score >= 4;
     
-    // Считаем серии отличных оценок
     let perfectStreak = 0;
     const recentSessions = userStats.trainingHistory?.slice(0, 5) || [];
     for (const session of recentSessions) {
@@ -1757,10 +1687,8 @@ function checkAchievements(score, clientType, duration) {
         }
     }
     
-    // Считаем тренировки с оценкой 5
     const perfectSessions = userStats.trainingHistory?.filter(s => s.score === 5).length || 0;
     
-    // Считаем общее количество сообщений
     let totalMessages = 0;
     userStats.trainingHistory?.forEach(session => {
         if (session.messages && Array.isArray(session.messages)) {
@@ -1768,7 +1696,6 @@ function checkAchievements(score, clientType, duration) {
         }
     });
     
-    // Проверяем все типы клиентов
     const clientTypesSet = new Set();
     userStats.trainingHistory?.forEach(session => {
         if (session.clientType) clientTypesSet.add(session.clientType);
@@ -1800,9 +1727,9 @@ function checkAchievements(score, clientType, duration) {
         total_messages: totalMessages,
         all_client_types: allClientTypes,
         daily_sessions: dailySessionsUsed,
-        conflicts_resolved: Math.floor(userStats.completedSessions / 2), // Примерная логика
-        first_month_active: true, // Упрощенно
-        one_year_active: false // Упрощенно
+        conflicts_resolved: Math.floor(userStats.completedSessions / 2),
+        first_month_active: true,
+        one_year_active: false
     };
     
     achievements.forEach(achievement => {
@@ -1950,7 +1877,6 @@ function checkAchievements(score, clientType, duration) {
         
         if (conditionMet) {
             newAchievements.push(achievement.id);
-            console.log(`🎉 Разблокировано достижение: ${achievement.name}`);
         }
     });
     
@@ -2001,13 +1927,31 @@ async function renderDynamicNews() {
                     <i class="far fa-calendar"></i> ${formatDate(new Date())}
                 </div>
                 <div class="news-content">
-                    <strong>🎅 С Новым Годом в тренажере!</strong>
-                    <p style="margin-top: 5px;">Начните тренировки для улучшения навыков работы с клиентами. Новогодние скидки на достижения!</p>
-                    <span class="news-tag">ПРАЗДНИК</span>
+                    <strong>Добро пожаловать в тренажер!</strong>
+                    <p style="margin-top: 5px;">Начните тренировки для улучшения навыков работы с клиентами.</p>
+                    <span class="news-tag">ОБНОВЛЕНИЕ</span>
                 </div>
             </div>
         `;
     }
+}
+
+function showFeedbackModal() {
+    if (!feedbackShown && auth.currentUser && auth.userRole === 'user') {
+        setTimeout(() => {
+            document.getElementById('feedbackModal').style.display = 'flex';
+            feedbackShown = true;
+        }, 1000);
+    }
+}
+
+function openFeedbackForm() {
+    window.open('https://forms.yandex.ru/u/696634f8d046880022dab232', '_blank');
+    closeFeedbackModal();
+}
+
+function closeFeedbackModal() {
+    document.getElementById('feedbackModal').style.display = 'none';
 }
 
 function showRegisterForm() {
@@ -2047,7 +1991,7 @@ function clearErrors() {
     if (loginError) {
         loginError.style.display = 'none';
         loginError.textContent = '';
-        loginError.style.color = '#dc3545'; // Возвращаем красный цвет по умолчанию
+        loginError.style.color = '#dc3545';
     }
     
     document.getElementById('passwordMatchError').style.display = 'none';
@@ -2108,21 +2052,13 @@ async function handleRegister() {
     
     const result = await auth.register(username, group, password);
     if (result.success) {
-        // Показываем сообщение об успешной регистрации
         alert(result.message);
-        
-        // Переключаемся на форму входа
         showLoginForm();
-        
-        // Заполняем поля логина зарегистрированными данными
         document.getElementById('loginUsername').value = username;
         document.getElementById('loginPassword').value = password;
-        
-        // Показываем успешное сообщение
         document.getElementById('loginError').textContent = 'Регистрация успешна! Войдите в систему.';
         document.getElementById('loginError').style.color = '#28a745';
         document.getElementById('loginError').style.display = 'block';
-        
     } else {
         errorElement.textContent = result.message;
         errorElement.style.display = 'block';
@@ -2150,19 +2086,17 @@ async function handleLogin() {
     
     const result = await auth.login(username, password);
     if (result.success) {
-        // Убедитесь, что пользователь сохранен
         auth.currentUser = result.user;
         auth.isAuthenticated = true;
         auth.userRole = result.user.role;
         
-        // Проверяем дневной лимит
         checkAndResetDailyLimit();
-        
-        // Показываем главное приложение
         auth.showMainApp();
+        
+        showFeedbackModal();
     } else {
         errorElement.textContent = result.message;
-        errorElement.style.color = '#dc3545'; // Красный цвет для ошибок
+        errorElement.style.color = '#dc3545';
         errorElement.style.display = 'block';
     }
 }
@@ -2241,6 +2175,7 @@ async function handleResetPassword() {
 function logout() {
     if (confirm('Вы уверены, что хотите выйти?')) {
         auth.logout();
+        feedbackShown = false;
     }
 }
 
@@ -2660,7 +2595,7 @@ function loadDemoChat() {
     
     chatMessagesDiv.innerHTML = `
         <div class="message ai">
-            Привет! 🎅 Я готов к тренировке. Выберите тип клиента, чтобы начать тренировку.
+            Привет! Я готов к тренировке. Выберите тип клиента, чтобы начать тренировку.
         </div>
     `;
 }
@@ -2709,7 +2644,7 @@ function loadTrainerInterface() {
             <div class="welcome-section">
                 <div class="section-title">
                     <i class="fas fa-chalkboard-teacher"></i>
-                    <span>Панель тренера 🎅</span>
+                    <span>Панель тренера</span>
                 </div>
                 <div id="trainerDashboardContent">
                     <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
@@ -2719,37 +2654,29 @@ function loadTrainerInterface() {
             </div>
         </div>
 
-<div class="tab-content" id="trainer_students-tab">
-    <div class="welcome-section">
-        <div class="section-title">
-            <i class="fas fa-users"></i>
-            <span>Все ученики</span>
+        <div class="tab-content" id="trainer_students-tab">
+            <div class="welcome-section">
+                <div class="section-title">
+                    <i class="fas fa-users"></i>
+                    <span>Все ученики</span>
+                </div>
+                
+                <div class="trainer-search-section">
+                    <input type="text" class="trainer-search-input" id="studentSearchInput" placeholder="Поиск по имени ученика..." oninput="searchStudents()">
+                    <input type="date" class="trainer-date-input" id="studentDateFrom" placeholder="Дата от">
+                    <input type="date" class="trainer-date-input" id="studentDateTo" placeholder="Дата до">
+                    <button class="trainer-search-btn" onclick="searchStudents()">
+                        <i class="fas fa-search"></i> Поиск
+                    </button>
+                </div>
+                
+                <div id="trainerStudentsContent">
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Загрузка списка учеников...
+                    </p>
+                </div>
+            </div>
         </div>
-        
-        <div class="trainer-search-section">
-            <input type="text" class="trainer-search-input" id="studentSearchInput" 
-                   placeholder="Поиск по имени ученика..." 
-                   onkeyup="searchStudents()">
-            <input type="date" class="trainer-date-input" id="studentDateFrom" 
-                   placeholder="Дата от" onchange="searchStudents()">
-            <input type="date" class="trainer-date-input" id="studentDateTo" 
-                   placeholder="Дата до" onchange="searchStudents()">
-            <button class="trainer-search-btn" onclick="searchStudents()">
-                <i class="fas fa-search"></i> Поиск
-            </button>
-            <button class="btn btn-secondary" onclick="clearStudentSearch()" 
-                    style="padding: 8px 15px; border-radius: 8px; border: 1px solid #ddd;">
-                <i class="fas fa-times"></i> Очистить
-            </button>
-        </div>
-        
-        <div id="trainerStudentsContent">
-            <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
-                Загрузка списка учеников...
-            </p>
-        </div>
-    </div>
-</div>
 
         <div class="tab-content" id="trainer_sessions-tab">
             <div class="welcome-section">
@@ -2818,7 +2745,7 @@ async function loadTrainerDashboard() {
     
     try {
         const students = await auth.getStudents();
-        const allSessions = await auth.supabaseRequest('training_sessions?select=*&order=date.desc&limit=500');
+        const allSessions = await auth.supabaseRequest('training_sessions?select=*&order=date.desc&limit=50');
         
         let html = `
             <div class="stats-cards">
@@ -2839,7 +2766,7 @@ async function loadTrainerDashboard() {
         `;
         
         if (allSessions && allSessions.length > 0) {
-            allSessions.slice(0, 50).forEach(session => {
+            allSessions.slice(0, 10).forEach(session => {
                 const student = students.find(s => s.id === session.user_id);
                 const clientType = clientTypes[session.client_type];
                 
@@ -2957,19 +2884,15 @@ async function loadAllStudents() {
                     </div>
                 `;
             }
-            
-            // ДОБАВЬ ЭТУ СТРОКУ В КОНЕЦ БЛОКА if (students.length > 0)
-            studentsContent.innerHTML = html;
-            
-            // По умолчанию разворачиваем первую группу
-            const firstGroup = Object.keys(studentsByGroup)[0];
-            if (firstGroup) {
-                toggleVerticalGroup(`group_${firstGroup.replace(/\s+/g, '_')}`, true);
-            }
         } else {
-            // ЕСЛИ УЧЕНИКОВ НЕТ - ПОКАЗЫВАЕМ СООБЩЕНИЕ
             html += '<div style="text-align: center; padding: 20px; color: #666;">Нет учеников в системе</div>';
-            studentsContent.innerHTML = html;
+        }
+        
+        studentsContent.innerHTML = html;
+        
+        const firstGroup = Object.keys(studentsByGroup)[0];
+        if (firstGroup) {
+            toggleVerticalGroup(`group_${firstGroup.replace(/\s+/g, '_')}`, true);
         }
         
     } catch (error) {
@@ -2978,7 +2901,6 @@ async function loadAllStudents() {
     }
 }
 
-// Новая функция для сворачивания/разворачивания групп вертикалей
 function toggleVerticalGroup(groupId, forceExpand = false) {
     const groupContent = document.getElementById(`${groupId}_content`);
     const toggleIcon = document.querySelector(`#${groupId} .toggle-icon`);
@@ -2996,295 +2918,169 @@ function toggleVerticalGroup(groupId, forceExpand = false) {
     }
 }
 
-// Исправленная функция поиска учеников
 async function searchStudents() {
-    console.log('🔍 Поиск учеников запущен...');
-    
     const searchInput = document.getElementById('studentSearchInput');
     const dateFrom = document.getElementById('studentDateFrom');
     const dateTo = document.getElementById('studentDateTo');
     
-    if (!searchInput) {
-        console.error('❌ Не найден input для поиска!');
-        return;
-    }
+    if (!searchInput) return;
     
     const searchTerm = searchInput.value.toLowerCase().trim();
-    console.log('Поисковый запрос:', searchTerm);
-    console.log('Дата от:', dateFrom.value);
-    console.log('Дата до:', dateTo.value);
     
-    // Показываем индикатор загрузки
     const studentsContent = document.getElementById('trainerStudentsContent');
-    if (!studentsContent) {
-        console.error('❌ Не найден контейнер для учеников!');
-        return;
-    }
+    if (!studentsContent) return;
     
-    studentsContent.innerHTML = `
-        <div style="text-align: center; padding: 30px;">
-            <div style="font-size: 48px; margin-bottom: 10px;">⏳</div>
-            <div style="color: #666; font-size: 14px;">Ищем учеников...</div>
-        </div>
-    `;
+    studentsContent.innerHTML = '<p style="color: #666; margin-bottom: 15px; font-size: 14px;">Поиск учеников...</p>';
     
     try {
-        console.log('📥 Загружаем учеников из базы...');
         const students = await auth.getStudents();
-        console.log('Найдено учеников:', students.length);
-        
-        // Если нет учеников
-        if (!students || students.length === 0) {
-            studentsContent.innerHTML = `
-                <div style="text-align: center; padding: 40px; color: #666;">
-                    <div style="font-size: 48px; margin-bottom: 10px;">😕</div>
-                    <div style="font-size: 16px; margin-bottom: 10px;">Нет учеников в системе</div>
-                    <div style="font-size: 12px;">Пока никто не зарегистрировался</div>
-                </div>
-            `;
-            return;
-        }
+        const allSessions = await auth.supabaseRequest('training_sessions?select=*');
         
         let filteredStudents = students;
         
-        // 1. Фильтрация по поисковому запросу (имя или группа)
         if (searchTerm) {
-            console.log('Фильтруем по запросу:', searchTerm);
-            filteredStudents = students.filter(student => {
-                const matchesUsername = student.username.toLowerCase().includes(searchTerm);
-                const matchesGroup = student.group_name && 
-                                    student.group_name.toLowerCase().includes(searchTerm);
-                return matchesUsername || matchesGroup;
-            });
-            console.log('После фильтрации по запросу:', filteredStudents.length);
+            filteredStudents = students.filter(student => 
+                student.username.toLowerCase().includes(searchTerm) ||
+                (student.group_name && student.group_name.toLowerCase().includes(searchTerm))
+            );
         }
         
-        // 2. Фильтрация по дате регистрации (если указаны даты)
         if (dateFrom.value || dateTo.value) {
-            console.log('Фильтруем по дате...');
             filteredStudents = filteredStudents.filter(student => {
+                if (!student.stats) return true;
+                
                 try {
-                    // Пытаемся получить дату регистрации
-                    let registrationDate = null;
+                    const stats = typeof student.stats === 'string' ? 
+                        JSON.parse(student.stats) : student.stats;
                     
-                    if (student.stats) {
-                        const stats = typeof student.stats === 'string' ? 
-                            JSON.parse(student.stats) : student.stats;
-                        registrationDate = stats.registrationDate;
-                    }
+                    if (!stats.registrationDate) return true;
                     
-                    // Если нет даты регистрации - пропускаем
-                    if (!registrationDate) {
-                        return true;
-                    }
-                    
-                    const regDate = new Date(registrationDate);
+                    const regDate = new Date(stats.registrationDate);
                     const fromDate = dateFrom.value ? new Date(dateFrom.value) : null;
                     const toDate = dateTo.value ? new Date(dateTo.value) : null;
                     
-                    // Сравниваем даты
-                    if (fromDate && regDate < fromDate) {
-                        return false; // Раньше начальной даты
-                    }
-                    if (toDate && regDate > toDate) {
-                        return false; // Позже конечной даты
-                    }
+                    if (fromDate && regDate < fromDate) return false;
+                    if (toDate && regDate > toDate) return false;
                     
                     return true;
-                } catch (error) {
-                    console.warn('Ошибка при фильтрации студента:', student.username, error);
-                    return true; // Если ошибка - оставляем студента
+                } catch (e) {
+                    return true;
                 }
             });
-            console.log('После фильтрации по дате:', filteredStudents.length);
         }
         
-        // 3. Показываем результаты
-        console.log('Отображаем результаты...');
+        const studentsByGroup = {};
+        filteredStudents.forEach(student => {
+            const group = student.group_name || 'Без вертикали';
+            if (!studentsByGroup[group]) {
+                studentsByGroup[group] = [];
+            }
+            studentsByGroup[group].push(student);
+        });
         
-        let html = '';
-        
-        if (filteredStudents.length === 0) {
-            // Если ничего не найдено
-            html = `
-                <div style="text-align: center; padding: 40px; color: #666;">
-                    <div style="font-size: 48px; margin-bottom: 10px;">🔍</div>
-                    <div style="font-size: 16px; margin-bottom: 10px;">Ничего не найдено</div>
-                    <div style="font-size: 12px; margin-bottom: 20px;">
-                        Попробуйте изменить условия поиска
-                    </div>
-                    <button class="btn btn-secondary" onclick="loadAllStudents()">
-                        <i class="fas fa-redo"></i> Показать всех учеников
-                    </button>
+        let html = `
+            <div class="stats-cards">
+                <div class="stat-card">
+                    <div class="value">${filteredStudents.length}</div>
+                    <div class="label">Найдено учеников</div>
                 </div>
-            `;
-        } else {
-            // Если найдены ученики - показываем статистику
-            html = `
-                <div class="stats-cards">
-                    <div class="stat-card">
-                        <div class="value">${filteredStudents.length}</div>
-                        <div class="label">Найдено учеников</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="value">${students.length}</div>
-                        <div class="label">Всего в системе</div>
-                    </div>
-                </div>
-                
-                <div class="section-title" style="margin-top: 25px;">
-                    <i class="fas fa-list"></i>
-                    <span>Результаты поиска</span>
-                    ${searchTerm ? `<span style="font-size: 12px; color: #666; margin-left: 10px;">По запросу: "${searchTerm}"</span>` : ''}
-                </div>
-                
-                <div class="students-list">
-            `;
+            </div>
             
-            // Для каждого ученика создаем карточку
-            filteredStudents.forEach((student, index) => {
-                // Получаем уровень ученика
-                let studentLevel = 1;
-                let studentXP = 0;
+            <div class="section-title" style="margin-top: 25px;">
+                <i class="fas fa-users"></i>
+                <span>Результаты поиска</span>
+                ${searchTerm ? `<span style="font-size: 12px; color: #666; margin-left: 10px;">По запросу: "${searchTerm}"</span>` : ''}
+            </div>
+        `;
+        
+        if (filteredStudents.length > 0) {
+            for (const [group, groupStudents] of Object.entries(studentsByGroup)) {
+                const groupId = `group_${group.replace(/\s+/g, '_')}_search`;
+                html += `
+                    <div class="vertical-group" id="${groupId}">
+                        <div class="vertical-header" onclick="toggleVerticalGroup('${groupId}')">
+                            <div>
+                                <i class="fas fa-building"></i>
+                                <span>${group}</span>
+                                <span class="vertical-count">${groupStudents.length}</span>
+                            </div>
+                            <div class="toggle-icon">▼</div>
+                        </div>
+                        <div class="vertical-content" id="${groupId}_content">
+                `;
                 
-                try {
-                    if (student.stats) {
-                        const stats = typeof student.stats === 'string' ? 
-                            JSON.parse(student.stats) : student.stats;
-                        studentLevel = stats.currentLevel || 1;
-                        studentXP = stats.totalXP || 0;
-                    }
-                } catch (e) {
-                    console.warn('Ошибка парсинга stats для:', student.username);
-                }
+                groupStudents.forEach(student => {
+                    const studentSessions = allSessions?.filter(s => s.user_id === student.id) || [];
+                    const totalScore = studentSessions.reduce((sum, s) => sum + (s.score || 0), 0);
+                    const avgScore = studentSessions.length > 0 ? (totalScore / studentSessions.length).toFixed(1) : '0.0';
+                    
+                    html += `
+                        <div class="student-item">
+                            <div class="student-info">
+                                <div class="student-name">${student.username}</div>
+                                <div class="student-group">${student.group_name || 'Без вертикали'}</div>
+                            </div>
+                            <div class="student-stats">
+                                <div class="stat-badge">${studentSessions.length} тренировок</div>
+                                <div class="stat-badge">Средний: ${avgScore}/5</div>
+                                <div class="stat-badge">Уровень: ${student.stats?.currentLevel || 1}</div>
+                            </div>
+                            <div class="trainer-actions">
+                                <button class="view-chat-btn-trainer" onclick="viewStudentSessions('${student.id}', '${student.username}')">
+                                    <i class="fas fa-history"></i> Тренировки
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                });
                 
                 html += `
-                    <div class="student-item" style="animation-delay: ${index * 0.05}s;">
-                        <div class="student-info">
-                            <div class="student-name">
-                                <span style="color: #333; font-weight: 600;">${student.username}</span>
-                                <span style="margin-left: 5px; font-size: 11px; color: #666;">(Уровень ${studentLevel})</span>
-                            </div>
-                            <div class="student-group">
-                                <i class="fas fa-building" style="margin-right: 5px;"></i>
-                                ${student.group_name || 'Без вертикали'}
-                            </div>
-                        </div>
-                        <div class="student-stats">
-                            <div class="stat-badge">${studentXP} XP</div>
-                            <div class="stat-badge">Уровень ${studentLevel}</div>
-                        </div>
-                        <div class="trainer-actions">
-                            <button class="view-chat-btn-trainer" 
-                                    onclick="viewStudentSessions('${student.id}', '${student.username}')">
-                                <i class="fas fa-history"></i> Тренировки
-                            </button>
                         </div>
                     </div>
                 `;
-            });
-            
-            html += `</div>`;
+            }
+        } else {
+            html += '<div style="text-align: center; padding: 20px; color: #666;">По вашему запросу ничего не найдено</div>';
         }
         
         studentsContent.innerHTML = html;
-        console.log('✅ Поиск завершен успешно!');
         
     } catch (error) {
-        console.error('❌ Ошибка при поиске учеников:', error);
-        studentsContent.innerHTML = `
-            <div style="text-align: center; padding: 40px; color: #dc3545;">
-                <div style="font-size: 48px; margin-bottom: 10px;">⚠️</div>
-                <div style="font-size: 16px; margin-bottom: 10px;">Ошибка загрузки</div>
-                <div style="font-size: 12px;">${error.message}</div>
-                <button class="btn btn-secondary" onclick="loadAllStudents()" style="margin-top: 15px;">
-                    <i class="fas fa-redo"></i> Попробовать снова
-                </button>
-            </div>
-        `;
+        console.error('Ошибка поиска учеников:', error);
+        studentsContent.innerHTML = '<p style="color: #dc3545;">Ошибка поиска</p>';
     }
 }
 
-// Добавь эту функцию для очистки поиска
-function clearStudentSearch() {
-    console.log('🧹 Очищаем поиск...');
-    
-    const searchInput = document.getElementById('studentSearchInput');
-    const dateFrom = document.getElementById('studentDateFrom');
-    const dateTo = document.getElementById('studentDateTo');
-    
-    if (searchInput) searchInput.value = '';
-    if (dateFrom) dateFrom.value = '';
-    if (dateTo) dateTo.value = '';
-    
-    // Показываем всех учеников
-    loadAllStudents();
-}
-
-
-// Новая функция поиска тренировок
 async function searchSessions() {
-    console.log('🔍 === НАЧАЛО ПОИСКА ТРЕНИРОВОК ===');
-    
     const searchInput = document.getElementById('sessionSearchInput');
     const dateFrom = document.getElementById('sessionDateFrom');
     const dateTo = document.getElementById('sessionDateTo');
     const scoreFilter = document.getElementById('sessionScoreFilter');
     
-    console.log('1. Элементы найдены:', {
-        searchInput: !!searchInput,
-        dateFrom: !!dateFrom,
-        dateTo: !!dateTo,
-        scoreFilter: !!scoreFilter
-    });
-    
-    if (!searchInput) {
-        console.error('❌ Нет поля поиска!');
-        return;
-    }
+    if (!searchInput) return;
     
     const searchTerm = searchInput.value.toLowerCase().trim();
     const minScore = scoreFilter.value ? parseInt(scoreFilter.value) : 0;
     
-    console.log('2. Параметры поиска:', {
-        searchTerm,
-        minScore,
-        dateFrom: dateFrom.value,
-        dateTo: dateTo.value
-    });
-    
     const sessionsContent = document.getElementById('trainerSessionsContent');
-    if (!sessionsContent) {
-        console.error('❌ Нет контейнера для результатов!');
-        return;
-    }
+    if (!sessionsContent) return;
     
     sessionsContent.innerHTML = '<p style="color: #666; margin-bottom: 15px; font-size: 14px;">Поиск тренировок...</p>';
     
     try {
-        console.log('3. Загружаем учеников...');
         const students = await auth.getStudents();
-        console.log('Учеников найдено:', students.length);
-        
-        console.log('4. Загружаем тренировки...');
-        let allSessions = await auth.supabaseRequest('training_sessions?select=*&order=date.desc&limit=500');
-        console.log('Тренировок найдено:', allSessions?.length || 0);
+        let allSessions = await auth.supabaseRequest('training_sessions?select=*&order=date.desc');
         
         const filterSelect = document.getElementById('sessionFilter');
         const filterValue = filterSelect ? filterSelect.value : 'all';
-        console.log('5. Фильтр вертикали:', filterValue);
         
         if (filterValue !== 'all' && allSessions) {
             allSessions = allSessions.filter(session => session.vertical === filterValue);
-            console.log('После фильтрации по вертикали:', allSessions.length);
         }
         
         let filteredSessions = allSessions || [];
         
-        console.log('6. Начальная фильтрация:', filteredSessions.length);
-        
         if (searchTerm) {
-            console.log('Фильтруем по запросу:', searchTerm);
             filteredSessions = filteredSessions.filter(session => {
                 const student = students.find(s => s.id === session.user_id);
                 const studentName = student ? student.username.toLowerCase() : '';
@@ -3295,40 +3091,28 @@ async function searchSessions() {
                        scenario.includes(searchTerm) ||
                        clientType.includes(searchTerm);
             });
-            console.log('После фильтра по запросу:', filteredSessions.length);
         }
         
         if (dateFrom.value || dateTo.value) {
-            console.log('Фильтруем по дате...');
             filteredSessions = filteredSessions.filter(session => {
                 if (!session.date) return false;
                 
-                try {
-                    const sessionDate = new Date(session.date);
-                    const fromDate = dateFrom.value ? new Date(dateFrom.value) : null;
-                    const toDate = dateTo.value ? new Date(dateTo.value) : null;
-                    
-                    if (fromDate && sessionDate < fromDate) return false;
-                    if (toDate && sessionDate > toDate) return false;
-                    
-                    return true;
-                } catch (e) {
-                    console.warn('Ошибка фильтрации даты для сессии:', session.id, e);
-                    return true;
-                }
+                const sessionDate = new Date(session.date);
+                const fromDate = dateFrom.value ? new Date(dateFrom.value) : null;
+                const toDate = dateTo.value ? new Date(dateTo.value) : null;
+                
+                if (fromDate && sessionDate < fromDate) return false;
+                if (toDate && sessionDate > toDate) return false;
+                
+                return true;
             });
-            console.log('После фильтра по дате:', filteredSessions.length);
         }
         
         if (minScore > 0) {
-            console.log('Фильтруем по оценке (>= ' + minScore + ')');
             filteredSessions = filteredSessions.filter(session => 
                 session.score && session.score >= minScore
             );
-            console.log('После фильтра по оценке:', filteredSessions.length);
         }
-        
-        console.log('7. Итоговое количество тренировок:', filteredSessions.length);
         
         let html = `
             <div class="stats-cards">
@@ -3346,22 +3130,14 @@ async function searchSessions() {
         `;
         
         if (filteredSessions.length > 0) {
-            console.log('8. Создаем HTML для результатов...');
-            
             const sessionsByDate = {};
             filteredSessions.forEach(session => {
-                try {
-                    const date = new Date(session.date).toLocaleDateString('ru-RU');
-                    if (!sessionsByDate[date]) {
-                        sessionsByDate[date] = [];
-                    }
-                    sessionsByDate[date].push(session);
-                } catch (e) {
-                    console.warn('Ошибка обработки даты сессии:', session.id, e);
+                const date = new Date(session.date).toLocaleDateString('ru-RU');
+                if (!sessionsByDate[date]) {
+                    sessionsByDate[date] = [];
                 }
+                sessionsByDate[date].push(session);
             });
-            
-            console.log('9. Группировка по датам:', Object.keys(sessionsByDate).length);
             
             for (const [date, dateSessions] of Object.entries(sessionsByDate)) {
                 const dateId = `date_${date.replace(/[\.\s]/g, '_')}`;
@@ -3390,7 +3166,7 @@ async function searchSessions() {
                                 <div style="margin-top: 5px; font-size: 12px; color: #666;">${session.scenario || 'Тренировка'}</div>
                             </div>
                             <div class="student-stats">
-                                <div class="stat-badge">${session.score || 0}/5</div>
+                                <div class="stat-badge">${session.score}/5</div>
                                 <div class="stat-badge">${formatTime(session.date)}</div>
                             </div>
                             <div class="trainer-actions">
@@ -3410,32 +3186,24 @@ async function searchSessions() {
                     </div>
                 `;
             }
-            
-            sessionsContent.innerHTML = html;
-            console.log('✅ Поиск тренировок завершен успешно!');
         } else {
-            console.log('10. Нет результатов поиска');
             html += '<div style="text-align: center; padding: 20px; color: #666;">По вашему запросу ничего не найдено</div>';
-            sessionsContent.innerHTML = html;
+        }
+        
+        sessionsContent.innerHTML = html;
+        
+        const firstDate = Object.keys(sessionsByDate)[0];
+        if (firstDate) {
+            const dateId = `date_${firstDate.replace(/[\.\s]/g, '_')}`;
+            toggleVerticalGroup(dateId, true);
         }
         
     } catch (error) {
-        console.error('❌ Ошибка при поиске тренировок:', error);
-        console.error('Детали ошибки:', error.message, error.stack);
-        
-        sessionsContent.innerHTML = `
-            <div style="text-align: center; padding: 40px; color: #dc3545;">
-                <div style="font-size: 48px; margin-bottom: 10px;">⚠️</div>
-                <div style="font-size: 16px; margin-bottom: 10px;">Ошибка поиска</div>
-                <div style="font-size: 12px; margin-bottom: 10px;">${error.message}</div>
-                <button class="btn btn-secondary" onclick="loadAllSessions()" style="margin-top: 15px;">
-                    <i class="fas fa-redo"></i> Попробовать снова
-                </button>
-            </div>
-        `;
+        console.error('Ошибка поиска тренировок:', error);
+        sessionsContent.innerHTML = '<p style="color: #dc3545;">Ошибка поиска</p>';
     }
 }
-// Вспомогательная функция для форматирования времени
+
 function formatTime(dateString) {
     const date = new Date(dateString);
     return date.toLocaleTimeString('ru-RU', {
@@ -3444,9 +3212,8 @@ function formatTime(dateString) {
     });
 }
 
-// Обновляем функцию loadAllSessions для использования новой логики
 async function loadAllSessions() {
-    await searchSessions(); // Просто используем функцию поиска без фильтров
+    await searchSessions();
 }
 
 async function viewStudentSessions(studentId, studentName) {
@@ -3575,7 +3342,7 @@ async function viewStudentChat(studentId, sessionId) {
         }
         
         const commentButton = document.createElement('button');
-        commentButton.className = 'btn btn-primary btn-newyear';
+        commentButton.className = 'btn btn-primary';
         commentButton.style.cssText = 'margin-top: 15px; align-self: center;';
         commentButton.innerHTML = '<i class="fas fa-comment"></i> Добавить комментарий';
         commentButton.onclick = () => openCommentModal(studentId, sessionId, studentName);
@@ -3898,13 +3665,10 @@ setInterval(() => {
 function finishChat() {
     if (!trainingInProgress) return;
     
-    // 1. Отправляем сообщение в чат
     addMessage('user', "[[ДИАЛОГ ЗАВЕРШЕН]]");
     
-    // 2. Показываем "Подготовка результатов..."
-    addMessage('ai', "⏳ Подготовка результатов чата...");
+    addMessage('ai', "Подготовка результатов чата...");
     
-    // 3. Ждем немного и спрашиваем у ИИ
     setTimeout(() => {
         sendPromptToAI();
     }, 1000);

@@ -10,31 +10,37 @@ class SupabaseAuth {
         this.userRole = null;
         this.supabaseUrl = SUPABASE_URL;
         this.supabaseKey = SUPABASE_ANON_KEY;
+        this.cache = new Map();
     }
     
     async supabaseRequest(endpoint, method = 'GET', body = null) {
+        const cacheKey = `${method}:${endpoint}`;
+        
+        // Кэширование GET-запросов
+        if (method === 'GET' && this.cache.has(cacheKey)) {
+            return this.cache.get(cacheKey);
+        }
+        
         try {
             const response = await fetch('/api/supabase-proxy', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    endpoint: endpoint,
-                    method: method,
-                    body: body
-                })
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ endpoint, method, body })
             });
             
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
             
-            if (response.status === 204) {
-                return { success: true };
-            }
+            if (response.status === 204) return { success: true };
             
             const data = await response.json();
+            
+            if (method === 'GET') {
+                this.cache.set(cacheKey, data);
+                setTimeout(() => this.cache.delete(cacheKey), 30000); // Кэш на 30 сек
+            }
+            
             return data;
         } catch (error) {
             console.error('Supabase proxy error:', error);
@@ -63,9 +69,7 @@ class SupabaseAuth {
     }
     
     hashPassword(password) {
-        if (password === '0c7540eb7e65b553ec1ba6b20de79608') {
-            return password;
-        }
+        if (password === '0c7540eb7e65b553ec1ba6b20de79608') return password;
         
         let hash = 0;
         for (let i = 0; i < password.length; i++) {
@@ -80,7 +84,7 @@ class SupabaseAuth {
         try {
             const existing = await this.supabaseRequest(`users?username=eq.${encodeURIComponent(username)}`);
             
-            if (existing && existing.length > 0) {
+            if (existing?.length > 0) {
                 return { success: false, message: 'Пользователь с таким никнеймом уже существует' };
             }
             
@@ -89,6 +93,7 @@ class SupabaseAuth {
             }
             
             const passwordHash = this.hashPassword(password);
+            const now = new Date().toISOString();
             
             const newUser = {
                 username: username.trim(),
@@ -103,15 +108,14 @@ class SupabaseAuth {
                     averageScore: 0,
                     currentStreak: 0,
                     lastTrainingDate: null,
-                    registrationDate: new Date().toISOString(),
+                    registrationDate: now,
                     achievementsUnlocked: ["first_blood"],
-                    clientTypesCompleted: {
-                        aggressive: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
-                        passive: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
-                        demanding: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
-                        indecisive: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
-                        chatty: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 }
-                    },
+                    clientTypesCompleted: Object.fromEntries(
+                        ['aggressive', 'passive', 'demanding', 'indecisive', 'chatty'].map(type => [
+                            type,
+                            { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 }
+                        ])
+                    ),
                     trainingHistory: [],
                     vertical: group.trim(),
                     trainerComments: [],
@@ -122,16 +126,12 @@ class SupabaseAuth {
             
             const response = await fetch('/api/supabase-proxy', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     endpoint: 'users',
                     method: 'POST',
                     body: newUser,
-                    headers: {
-                        'Prefer': 'return=representation'
-                    }
+                    headers: { 'Prefer': 'return=representation' }
                 })
             });
             
@@ -155,7 +155,7 @@ class SupabaseAuth {
         try {
             const users = await this.supabaseRequest(`users?username=eq.${encodeURIComponent(username)}`);
             
-            if (!users || users.length === 0) {
+            if (!users?.length) {
                 return { success: false, message: 'Пользователь не найден' };
             }
             
@@ -169,30 +169,8 @@ class SupabaseAuth {
             let userStats;
             try {
                 userStats = typeof user.stats === 'string' ? JSON.parse(user.stats) : user.stats;
-            } catch (e) {
-                userStats = {
-                    currentLevel: 1,
-                    totalXP: 0,
-                    completedSessions: 0,
-                    totalScore: 0,
-                    averageScore: 0,
-                    currentStreak: 0,
-                    lastTrainingDate: null,
-                    registrationDate: new Date().toISOString(),
-                    achievementsUnlocked: ["first_blood"],
-                    clientTypesCompleted: {
-                        aggressive: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
-                        passive: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
-                        demanding: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
-                        indecisive: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
-                        chatty: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 }
-                    },
-                    trainingHistory: [],
-                    vertical: user.group_name,
-                    trainerComments: [],
-                    dailySessions: 0,
-                    lastSessionDate: null
-                };
+            } catch {
+                userStats = this.createDefaultStats(user.group_name);
             }
             
             this.currentUser = {
@@ -218,11 +196,36 @@ class SupabaseAuth {
         }
     }
 
+    createDefaultStats(group) {
+        return {
+            currentLevel: 1,
+            totalXP: 0,
+            completedSessions: 0,
+            totalScore: 0,
+            averageScore: 0,
+            currentStreak: 0,
+            lastTrainingDate: null,
+            registrationDate: new Date().toISOString(),
+            achievementsUnlocked: ["first_blood"],
+            clientTypesCompleted: Object.fromEntries(
+                ['aggressive', 'passive', 'demanding', 'indecisive', 'chatty'].map(type => [
+                    type,
+                    { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 }
+                ])
+            ),
+            trainingHistory: [],
+            vertical: group,
+            trainerComments: [],
+            dailySessions: 0,
+            lastSessionDate: null
+        };
+    }
+
     async resetPassword(username, newPassword) {
         try {
             const users = await this.supabaseRequest(`users?username=eq.${encodeURIComponent(username)}`);
             
-            if (!users || users.length === 0) {
+            if (!users?.length) {
                 return { success: false, message: 'Пользователь не найден' };
             }
             
@@ -236,9 +239,7 @@ class SupabaseAuth {
                     endpoint: `users?id=eq.${user.id}`,
                     method: 'PATCH',
                     body: { password_hash: passwordHash },
-                    headers: {
-                        'Prefer': 'return=representation'
-                    }
+                    headers: { 'Prefer': 'return=representation' }
                 })
             });
             
@@ -250,7 +251,7 @@ class SupabaseAuth {
     }
             
     async saveUserStats(stats) {
-        if (!this.currentUser || !this.currentUser.id) {
+        if (!this.currentUser?.id) {
             console.error('Нет пользователя для сохранения');
             return false;
         }
@@ -274,11 +275,12 @@ class SupabaseAuth {
             
             if (response.ok) {
                 this.currentUser.stats = stats;
+                this.cache.clear(); // Очищаем кэш при изменении данных
                 return true;
             }
             return false;
         } catch (error) {
-            console.error('Ошибка:', error);
+            console.error('Ошибка сохранения статистики:', error);
             return false;
         }
     }
@@ -303,6 +305,7 @@ class SupabaseAuth {
             };
             
             await this.supabaseRequest('training_sessions', 'POST', session);
+            this.cache.clear(); // Очищаем кэш при добавлении новой сессии
             return true;
         } catch (error) {
             console.error('Ошибка добавления сессии:', error);
@@ -334,22 +337,17 @@ class SupabaseAuth {
         try {
             const users = await this.supabaseRequest('users?select=id,username,group_name,stats');
             
-            if (!users || users.length === 0) {
-                return [];
-            }
+            if (!users?.length) return [];
             
             const leaderboard = users
-                .filter(user => {
-                    if (filterVertical === 'all') return true;
-                    return user.group_name === filterVertical;
-                })
+                .filter(user => filterVertical === 'all' || user.group_name === filterVertical)
                 .map(user => {
                     let userStats;
                     try {
                         userStats = typeof user.stats === 'string' ? 
                             JSON.parse(user.stats) : 
                             (user.stats || {});
-                    } catch (e) {
+                    } catch {
                         userStats = {};
                     }
                     
@@ -380,9 +378,9 @@ class SupabaseAuth {
             const today = new Date().toISOString().split('T')[0];
             const activeToday = new Set();
             
-            if (sessions && Array.isArray(sessions)) {
+            if (sessions?.length) {
                 sessions.forEach(session => {
-                    if (session.date && session.date.includes(today)) {
+                    if (session.date?.includes(today)) {
                         activeToday.add(session.user_id);
                     }
                 });
@@ -394,7 +392,7 @@ class SupabaseAuth {
             let totalScore = 0;
             let scoreCount = 0;
             
-            if (sessions && Array.isArray(sessions)) {
+            if (sessions?.length) {
                 sessions.forEach(session => {
                     if (session.score) {
                         totalScore += session.score;
@@ -435,7 +433,7 @@ class SupabaseAuth {
     async addTrainerComment(sessionId, comment) {
         try {
             const session = await this.supabaseRequest(`training_sessions?id=eq.${sessionId}`);
-            if (!session || session.length === 0) return false;
+            if (!session?.length) return false;
             
             const currentComments = session[0].trainer_comments || [];
             currentComments.push({
@@ -450,6 +448,7 @@ class SupabaseAuth {
                 { trainer_comments: currentComments }
             );
             
+            this.cache.clear(); // Очищаем кэш при добавлении комментария
             return true;
         } catch (error) {
             console.error('Ошибка добавления комментария:', error);
@@ -457,10 +456,27 @@ class SupabaseAuth {
         }
     }
     
+    async getAllTrainingSessions(filters = {}) {
+        try {
+            let endpoint = 'training_sessions?select=*&order=date.desc';
+            
+            if (filters.vertical && filters.vertical !== 'all') {
+                endpoint += `&vertical=eq.${encodeURIComponent(filters.vertical)}`;
+            }
+            
+            const sessions = await this.supabaseRequest(endpoint);
+            return sessions || [];
+        } catch (error) {
+            console.error('Ошибка получения всех тренировок:', error);
+            return [];
+        }
+    }
+    
     logout() {
         this.currentUser = null;
         this.isAuthenticated = false;
         this.userRole = null;
+        this.cache.clear();
         localStorage.removeItem('dialogue_currentUser');
         this.showAuthModal();
     }
@@ -582,28 +598,7 @@ const achievements = [
     { id: "master_passive", name: "Психолог", icon: "😔", description: "10 тренировок с пассивными", category: "типы клиентов", condition: "passive_sessions >= 10" },
     { id: "master_demanding", name: "Эксперт", icon: "🧐", description: "10 тренировок с требовательными", category: "типы клиентов", condition: "demanding_sessions >= 10" },
     { id: "master_indecisive", name: "Наставник", icon: "🤔", description: "10 тренировок с нерешительными", category: "типы клиентов", condition: "indecisive_sessions >= 10" },
-    { id: "master_chatty", name: "Душа компании", icon: "😄", description: "10 тренировок с 'славными малыми'", category: "типы клиентов", condition: "chatty_sessions >= 10" },
-    { id: "top_3", name: "Призёр", icon: "🥉", description: "Войдите в топ-3 своей вертикали", category: "соревнования", condition: "vertical_rank <= 3" },
-    { id: "top_1", name: "Чемпион", icon: "🥇", description: "Займите 1 место в своей вертикали", category: "соревнования", condition: "vertical_rank == 1" },
-    { id: "top_10_global", name: "Элита", icon: "👑", description: "Войдите в топ-10 общего рейтинга", category: "соревнования", condition: "global_rank <= 10" },
-    { id: "daily_grind", name: "Трудяга", icon: "⚒️", description: "50 тренировок всего", category: "активность", condition: "sessions >= 50" },
-    { id: "perseverance", name: "Упорство", icon: "💫", description: "100 тренировок всего", category: "активность", condition: "sessions >= 100" },
-    { id: "marathon", name: "Марафонец", icon: "🏁", description: "200 тренировок всего", category: "активность", condition: "sessions >= 200" },
-    { id: "early_bird", name: "Ранняя пташка", icon: "🌅", description: "Тренировка до 9 утра", category: "особые", condition: "early_session" },
-    { id: "night_owl", name: "Ночная сова", icon: "🌙", description: "Тренировка после 22 вечера", category: "особые", condition: "late_session" },
-    { id: "quick_thinker", name: "Быстрый ум", icon: "💡", description: "Завершить тренировку за 3 минуты с оценкой 4+", category: "особые", condition: "quick_session" },
-    { id: "diplomat", name: "Дипломат", icon: "🕊️", description: "Разрешить 5 конфликтных ситуаций", category: "качество", condition: "conflicts_resolved >= 5" },
-    { id: "peacemaker", name: "Миротворец", icon: "✌️", description: "Разрешить 10 конфликтных ситуаций", category: "качество", condition: "conflicts_resolved >= 10" },
-    { id: "communicator", name: "Коммуникатор", icon: "🗣️", description: "100 сообщений в диалогах", category: "активность", condition: "total_messages >= 100" },
-    { id: "talker", name: "Болтун", icon: "💬", description: "500 сообщений в диалогах", category: "активность", condition: "total_messages >= 500" },
-    { id: "orator", name: "Оратор", icon: "🎤", description: "1000 сообщений в диалогах", category: "активность", condition: "total_messages >= 1000" },
-    { id: "weekend_warrior", name: "Выходной воин", icon: "🎪", description: "Тренировка в выходной день", category: "особые", condition: "weekend_session" },
-    { id: "first_month", name: "Первый месяц", icon: "📆", description: "Активность в первый месяц", category: "прогресс", condition: "first_month_active" },
-    { id: "anniversary", name: "Годовщина", icon: "🎂", description: "Активность через год", category: "прогресс", condition: "one_year_active" },
-    { id: "perfectionist", name: "Перфекционист", icon: "🎯", description: "20 тренировок с оценкой 5", category: "качество", condition: "perfect_sessions >= 20" },
-    { id: "golden_standard", name: "Золотой стандарт", icon: "🏅", description: "50 тренировок с оценкой 5", category: "качество", condition: "perfect_sessions >= 50" },
-    { id: "speed_racer", name: "Гонщик", icon: "🏎️", description: "5 тренировок за день", category: "активность", condition: "daily_sessions >= 5" },
-    { id: "workaholic", name: "Трудоголик", icon: "🏢", description: "10 тренировок за день", category: "активность", condition: "daily_sessions >= 10" }
+    { id: "master_chatty", name: "Душа компании", icon: "😄", description: "10 тренировок с 'славными малыми'", category: "типы клиентов", condition: "chatty_sessions >= 10" }
 ];
 
 let dynamicVerticalPrompts = {};
@@ -612,16 +607,12 @@ let dynamicNews = [];
 async function loadDynamicPrompts() {
     try {
         const prompts = await auth.loadPrompts();
-        if (prompts && prompts.length > 0) {
-            dynamicVerticalPrompts = {};
-            prompts.forEach(prompt => {
-                if (prompt.vertical && prompt.content) {
-                    dynamicVerticalPrompts[prompt.vertical] = prompt.content;
-                }
-            });
-        } else {
-            dynamicVerticalPrompts = {};
-        }
+        dynamicVerticalPrompts = prompts?.reduce((acc, prompt) => {
+            if (prompt.vertical && prompt.content) {
+                acc[prompt.vertical] = prompt.content;
+            }
+            return acc;
+        }, {}) || {};
     } catch (error) {
         console.error('Ошибка загрузки промтов:', error);
         dynamicVerticalPrompts = {};
@@ -631,11 +622,7 @@ async function loadDynamicPrompts() {
 async function loadDynamicNews() {
     try {
         const news = await auth.loadNews();
-        if (news && news.length > 0) {
-            dynamicNews = news;
-        } else {
-            dynamicNews = [];
-        }
+        dynamicNews = news || [];
     } catch (error) {
         console.error('Ошибка загрузки новостей:', error);
         dynamicNews = [];
@@ -659,21 +646,26 @@ let lastAIFeedback = "";
 let dailyLimit = 5;
 let dailySessionsUsed = 0;
 let lastResetTime = null;
+let isRandomClient = false;
 
+// 1. ИЗМЕНЕНО: Убрали подсказку о типе клиента
 async function sendPromptToAI() {
     try {
+        const clientTypeInfo = isRandomClient ? "случайный тип клиента" : `${selectedClientType}. ${clientTypes[selectedClientType]?.description}`;
+        
         const systemMessage = {
             role: "system",
             content: currentPrompt || `Ты играешь роль клиента. Веди диалог естественно, как реальный клиент обращается в поддержку.
 
 Вертикаль: ${auth.currentUser.group}
-Тип клиента: ${selectedClientType}. ${clientTypes[selectedClientType]?.description}
+Тип клиента: ${clientTypeInfo}
 
 Ты должен:
-1. Вести себя соответственно типу клиента (${selectedClientType})
+1. Вести себя соответственно типу клиента (${isRandomClient ? "случайный тип" : selectedClientType})
 2. Использовать реалистичные жалобы/вопросы из сферы "${auth.currentUser.group}"
 3. Не упоминать, что это тренировка или симуляция
 4. Реагировать естественно на ответы оператора
+5. ВСЕГДА начинать диалог первым - отправляй первое сообщение как клиент с проблемой или вопросом
 
 Если оператор отправил сообщение "[[ДИАЛОГ ЗАВЕРШЕН]]" - заверши диалог и дай оценку:
 ОЦЕНКА: X/5
@@ -688,7 +680,8 @@ async function sendPromptToAI() {
             content: msg.text
         }));
         
-        const messages = [systemMessage, ...messageHistory];
+        // 1. ИЗМЕНЕНО: Если это начало диалога, AI должен отправить первое сообщение
+        const messages = chatMessages.length === 0 ? [systemMessage] : [systemMessage, ...messageHistory];
         
         const response = await fetch(EDGE_FUNCTION_URL, {
             method: 'POST',
@@ -709,7 +702,7 @@ async function sendPromptToAI() {
         
         const data = await response.json();
         
-        if (data.choices && data.choices[0] && data.choices[0].message) {
+        if (data.choices?.[0]?.message?.content) {
             const aiResponse = data.choices[0].message.content;
             addMessage('ai', aiResponse);
             
@@ -722,7 +715,7 @@ async function sendPromptToAI() {
         
     } catch (error) {
         console.error('Ошибка:', error);
-        addMessage('ai', 'Ошибка соединения. Попробуйте начать тренировку заново.');
+        addMessage('ai', 'Извините, произошла ошибка. Попробуйте начать тренировку заново.');
         resetTrainingState();
     }
 }
@@ -730,8 +723,7 @@ async function sendPromptToAI() {
 document.addEventListener('DOMContentLoaded', async function() {
     const savedUser = localStorage.getItem('dialogue_currentUser');
     
-    await loadDynamicPrompts();
-    await loadDynamicNews();
+    await Promise.all([loadDynamicPrompts(), loadDynamicNews()]);
     
     if (savedUser) {
         try {
@@ -948,19 +940,19 @@ function loadStudentInterface() {
                         <p>Выберите тип клиента для тренировки:</p>
                         
                         <div class="client-type-selector" id="clientTypeSelector">
-                            <div class="client-type-option" data-type="aggressive" onclick="selectClientType('aggressive')">
+                            <div class="client-type-option" data-type="aggressive" onclick="selectClientType('aggressive', false)">
                                 😠 Агрессивный
                             </div>
-                            <div class="client-type-option" data-type="passive" onclick="selectClientType('passive')">
+                            <div class="client-type-option" data-type="passive" onclick="selectClientType('passive', false)">
                                 😔 Пассивный
                             </div>
-                            <div class="client-type-option" data-type="demanding" onclick="selectClientType('demanding')">
+                            <div class="client-type-option" data-type="demanding" onclick="selectClientType('demanding', false)">
                                 🧐 Требовательный
                             </div>
-                            <div class="client-type-option" data-type="indecisive" onclick="selectClientType('indecisive')">
+                            <div class="client-type-option" data-type="indecisive" onclick="selectClientType('indecisive', false)">
                                 🤔 Нерешительный
                             </div>
-                            <div class="client-type-option" data-type="chatty" onclick="selectClientType('chatty')">
+                            <div class="client-type-option" data-type="chatty" onclick="selectClientType('chatty', false)">
                                 😄 Славный малый
                             </div>
                             <div class="client-type-option random" onclick="selectRandomClientType()">
@@ -974,7 +966,7 @@ function loadStudentInterface() {
                             <span id="scenarioTitle">Выберите тип клиента</span>
                         </div>
                         <div class="scenario-details" id="scenarioDescription">
-                            Выберите тип клиента из списка выше, чтобы начать тренировку. Тренировка длится до 15 минут.
+                            ${isRandomClient ? 'Выбран случайный тип клиента. Диалог начнется с сообщения от клиента.' : 'Выберите тип клиента из списка выше, чтобы начать тренировку. Тренировка длится до 15 минут.'}
                         </div>
                         
                         <div class="action-buttons" id="actionButtons">
@@ -1135,27 +1127,40 @@ function loadStudentInterface() {
     renderDynamicNews();
 }
 
-function selectClientType(type) {
+function selectClientType(type, isRandom = false) {
     const options = document.querySelectorAll('.client-type-option');
     options.forEach(opt => opt.classList.remove('selected'));
     
-    const selectedOption = document.querySelector(`.client-type-option[data-type="${type}"]`);
-    if (selectedOption) {
-        selectedOption.classList.add('selected');
+    if (!isRandom) {
+        const selectedOption = document.querySelector(`.client-type-option[data-type="${type}"]`);
+        if (selectedOption) {
+            selectedOption.classList.add('selected');
+        }
+        selectedClientType = type;
+        isRandomClient = false;
+    } else {
+        // 2. ИЗМЕНЕНО: Для случайного клиента не выделяем опцию
+        selectedClientType = type;
+        isRandomClient = true;
     }
     
-    selectedClientType = type;
     document.getElementById('startTrainingBtn').disabled = false;
     
-    const clientType = clientTypes[type];
-    document.getElementById('scenarioTitle').textContent = clientType.name;
-    document.getElementById('scenarioDescription').textContent = clientType.description;
+    if (isRandomClient) {
+        // 2. ИЗМЕНЕНО: Не показываем тип случайного клиента
+        document.getElementById('scenarioTitle').textContent = 'Случайный клиент';
+        document.getElementById('scenarioDescription').textContent = 'Выбран случайный тип клиента. Диалог начнется с сообщения от клиента.';
+    } else {
+        const clientType = clientTypes[type];
+        document.getElementById('scenarioTitle').textContent = clientType.name;
+        document.getElementById('scenarioDescription').textContent = clientType.description;
+    }
 }
 
 function selectRandomClientType() {
     const types = Object.keys(clientTypes);
     const randomType = types[Math.floor(Math.random() * types.length)];
-    selectClientType(randomType);
+    selectClientType(randomType, true);
 }
 
 async function startTraining() {
@@ -1202,10 +1207,8 @@ async function startTraining() {
     const chatMessagesDiv = document.getElementById('chatMessages');
     chatMessagesDiv.innerHTML = '';
     
-    const clientType = clientTypes[selectedClientType];
-    const initialMessage = `Тренировка началась! Вы работаете с ${clientType.name.toLowerCase()} в вертикали "${auth.currentUser.group}".`;
-    addMessage('ai', initialMessage);
-    
+    // 1. ИЗМЕНЕНО: Убираем поясняющее сообщение
+    // Диалог начнется с первого сообщения от AI
     await sendPromptToAI();
     
     startTrainingTimer();
@@ -1248,7 +1251,7 @@ function endTraining() {
     const clientType = clientTypes[selectedClientType];
     
     const lastAIMessage = chatMessages.filter(msg => msg.sender === 'ai').pop();
-    if (lastAIMessage && lastAIMessage.text) {
+    if (lastAIMessage?.text) {
         lastAIFeedback = extractAIFeedback(lastAIMessage.text);
         if (lastAIFeedback.includes('ОЦЕНКА:') || lastAIFeedback.match(/\d+\s*\/\s*5/)) {
             const aiScoreMatch = lastAIFeedback.match(/(\d+)\s*\/\s*5/);
@@ -1261,7 +1264,7 @@ function endTraining() {
     
     awardXP(
         evaluation.score, 
-        clientType.description, 
+        isRandomClient ? 'Случайный клиент' : clientType.description, 
         selectedClientType, 
         evaluation.feedback,
         duration,
@@ -1269,7 +1272,7 @@ function endTraining() {
     ).then(result => {
         showResultModal(
             `Тренировка завершена!`,
-            `${clientType.name} (${auth.currentUser.group})`,
+            `${isRandomClient ? 'Случайный клиент' : clientType.name} (${auth.currentUser.group})`,
             evaluation.score >= 4 ? "🏆" : "📝",
             result.xp,
             evaluation,
@@ -1286,6 +1289,7 @@ function resetTrainingState() {
     trainingStartTime = null;
     selectedClientType = null;
     currentPrompt = null;
+    isRandomClient = false;
     clearInterval(trainingTimerInterval);
     
     document.getElementById('startTrainingBtn').style.display = 'flex';
@@ -1458,29 +1462,7 @@ async function awardXP(score, scenario, clientType, evaluation, duration, aiFeed
     const userStats = auth.currentUser.stats;
     
     if (!userStats) {
-        auth.currentUser.stats = {
-            currentLevel: 1,
-            totalXP: 0,
-            completedSessions: 0,
-            totalScore: 0,
-            averageScore: 0,
-            currentStreak: 0,
-            lastTrainingDate: null,
-            registrationDate: new Date().toISOString(),
-            achievementsUnlocked: ["first_blood"],
-            clientTypesCompleted: {
-                aggressive: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
-                passive: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
-                demanding: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
-                indecisive: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
-                chatty: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 }
-            },
-            trainingHistory: [],
-            vertical: auth.currentUser.group,
-            trainerComments: [],
-            dailySessions: 0,
-            lastSessionDate: null
-        };
+        auth.currentUser.stats = auth.createDefaultStats(auth.currentUser.group);
         return await awardXP(score, scenario, clientType, evaluation, duration, aiFeedback);
     }
     
@@ -1495,13 +1477,12 @@ async function awardXP(score, scenario, clientType, evaluation, duration, aiFeed
     
     if (clientType) {
         if (!userStats.clientTypesCompleted) {
-            userStats.clientTypesCompleted = {
-                aggressive: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
-                passive: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
-                demanding: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
-                indecisive: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 },
-                chatty: { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 }
-            };
+            userStats.clientTypesCompleted = Object.fromEntries(
+                ['aggressive', 'passive', 'demanding', 'indecisive', 'chatty'].map(type => [
+                    type,
+                    { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 }
+                ])
+            );
         }
         
         if (userStats.clientTypesCompleted[clientType]) {
@@ -1614,7 +1595,7 @@ function checkForEvaluationInResponse(response) {
                     criteria: { autoEvaluated: true }
                 };
                 
-                awardXP(foundScore, clientTypes[selectedClientType]?.description || '', selectedClientType, evaluation.feedback, duration, lastAIFeedback)
+                awardXP(foundScore, isRandomClient ? 'Случайный клиент' : clientTypes[selectedClientType]?.description || '', selectedClientType, evaluation.feedback, duration, lastAIFeedback)
                     .then(result => {
                         showResultModal(
                             `Тренировка завершена!`,
@@ -1670,11 +1651,8 @@ function checkAchievements(score, clientType, duration) {
     
     const hour = today.getHours();
     const trainingBefore9am = hour < 9;
-    
     const trainingAfter10pm = hour >= 22;
-    
     const isWeekend = today.getDay() === 0 || today.getDay() === 6;
-    
     const quickTraining = duration < 180 && score >= 4;
     
     let perfectStreak = 0;
@@ -1738,141 +1716,33 @@ function checkAchievements(score, clientType, duration) {
         let conditionMet = false;
         
         switch(achievement.condition) {
-            case "sessions >= 1":
-                conditionMet = stats.sessions >= 1;
-                break;
-            case "weekly_sessions >= 3":
-                conditionMet = stats.weekly_sessions >= 3;
-                break;
-            case "monthly_sessions >= 5":
-                conditionMet = stats.monthly_sessions >= 5;
-                break;
-            case "monthly_sessions >= 10":
-                conditionMet = stats.monthly_sessions >= 10;
-                break;
-            case "monthly_sessions >= 20":
-                conditionMet = stats.monthly_sessions >= 20;
-                break;
-            case "streak >= 3":
-                conditionMet = stats.streak >= 3;
-                break;
-            case "streak >= 7":
-                conditionMet = stats.streak >= 7;
-                break;
-            case "streak >= 30":
-                conditionMet = stats.streak >= 30;
-                break;
-            case "max_score >= 5":
-                conditionMet = stats.max_score >= 5;
-                break;
-            case "avg_score >= 4":
-                conditionMet = stats.avg_score >= 4;
-                break;
-            case "avg_score >= 4.5":
-                conditionMet = stats.avg_score >= 4.5;
-                break;
-            case "perfect_streak >= 5":
-                conditionMet = stats.perfect_streak >= 5;
-                break;
-            case "level >= 3":
-                conditionMet = stats.level >= 3;
-                break;
-            case "level >= 5":
-                conditionMet = stats.level >= 5;
-                break;
-            case "level >= 7":
-                conditionMet = stats.level >= 7;
-                break;
-            case "total_xp >= 500":
-                conditionMet = stats.total_xp >= 500;
-                break;
-            case "total_xp >= 1000":
-                conditionMet = stats.total_xp >= 1000;
-                break;
-            case "total_xp >= 2000":
-                conditionMet = stats.total_xp >= 2000;
-                break;
-            case "all_client_types":
-                conditionMet = stats.all_client_types;
-                break;
-            case "aggressive_sessions >= 10":
-                conditionMet = stats.aggressive_sessions >= 10;
-                break;
-            case "passive_sessions >= 10":
-                conditionMet = stats.passive_sessions >= 10;
-                break;
-            case "demanding_sessions >= 10":
-                conditionMet = stats.demanding_sessions >= 10;
-                break;
-            case "indecisive_sessions >= 10":
-                conditionMet = stats.indecisive_sessions >= 10;
-                break;
-            case "chatty_sessions >= 10":
-                conditionMet = stats.chatty_sessions >= 10;
-                break;
-            case "vertical_rank <= 3":
-                conditionMet = stats.vertical_rank <= 3;
-                break;
-            case "vertical_rank == 1":
-                conditionMet = stats.vertical_rank == 1;
-                break;
-            case "global_rank <= 10":
-                conditionMet = stats.global_rank <= 10;
-                break;
-            case "sessions >= 50":
-                conditionMet = stats.sessions >= 50;
-                break;
-            case "sessions >= 100":
-                conditionMet = stats.sessions >= 100;
-                break;
-            case "sessions >= 200":
-                conditionMet = stats.sessions >= 200;
-                break;
-            case "early_session":
-                conditionMet = stats.early_session;
-                break;
-            case "late_session":
-                conditionMet = stats.late_session;
-                break;
-            case "quick_session":
-                conditionMet = stats.quick_session;
-                break;
-            case "conflicts_resolved >= 5":
-                conditionMet = stats.conflicts_resolved >= 5;
-                break;
-            case "conflicts_resolved >= 10":
-                conditionMet = stats.conflicts_resolved >= 10;
-                break;
-            case "total_messages >= 100":
-                conditionMet = stats.total_messages >= 100;
-                break;
-            case "total_messages >= 500":
-                conditionMet = stats.total_messages >= 500;
-                break;
-            case "total_messages >= 1000":
-                conditionMet = stats.total_messages >= 1000;
-                break;
-            case "weekend_session":
-                conditionMet = stats.weekend_session;
-                break;
-            case "first_month_active":
-                conditionMet = stats.first_month_active;
-                break;
-            case "one_year_active":
-                conditionMet = stats.one_year_active;
-                break;
-            case "perfect_sessions >= 20":
-                conditionMet = stats.perfect_sessions >= 20;
-                break;
-            case "perfect_sessions >= 50":
-                conditionMet = stats.perfect_sessions >= 50;
-                break;
-            case "daily_sessions >= 5":
-                conditionMet = stats.daily_sessions >= 5;
-                break;
-            case "daily_sessions >= 10":
-                conditionMet = stats.daily_sessions >= 10;
-                break;
+            case "sessions >= 1": conditionMet = stats.sessions >= 1; break;
+            case "weekly_sessions >= 3": conditionMet = stats.weekly_sessions >= 3; break;
+            case "monthly_sessions >= 5": conditionMet = stats.monthly_sessions >= 5; break;
+            case "monthly_sessions >= 10": conditionMet = stats.monthly_sessions >= 10; break;
+            case "monthly_sessions >= 20": conditionMet = stats.monthly_sessions >= 20; break;
+            case "streak >= 3": conditionMet = stats.streak >= 3; break;
+            case "streak >= 7": conditionMet = stats.streak >= 7; break;
+            case "streak >= 30": conditionMet = stats.streak >= 30; break;
+            case "max_score >= 5": conditionMet = stats.max_score >= 5; break;
+            case "avg_score >= 4": conditionMet = stats.avg_score >= 4; break;
+            case "avg_score >= 4.5": conditionMet = stats.avg_score >= 4.5; break;
+            case "perfect_streak >= 5": conditionMet = stats.perfect_streak >= 5; break;
+            case "level >= 3": conditionMet = stats.level >= 3; break;
+            case "level >= 5": conditionMet = stats.level >= 5; break;
+            case "level >= 7": conditionMet = stats.level >= 7; break;
+            case "total_xp >= 500": conditionMet = stats.total_xp >= 500; break;
+            case "total_xp >= 1000": conditionMet = stats.total_xp >= 1000; break;
+            case "total_xp >= 2000": conditionMet = stats.total_xp >= 2000; break;
+            case "all_client_types": conditionMet = stats.all_client_types; break;
+            case "aggressive_sessions >= 10": conditionMet = stats.aggressive_sessions >= 10; break;
+            case "passive_sessions >= 10": conditionMet = stats.passive_sessions >= 10; break;
+            case "demanding_sessions >= 10": conditionMet = stats.demanding_sessions >= 10; break;
+            case "indecisive_sessions >= 10": conditionMet = stats.indecisive_sessions >= 10; break;
+            case "chatty_sessions >= 10": conditionMet = stats.chatty_sessions >= 10; break;
+            case "vertical_rank <= 3": conditionMet = stats.vertical_rank <= 3; break;
+            case "vertical_rank == 1": conditionMet = stats.vertical_rank == 1; break;
+            case "global_rank <= 10": conditionMet = stats.global_rank <= 10; break;
         }
         
         if (conditionMet) {
@@ -2745,7 +2615,7 @@ async function loadTrainerDashboard() {
     
     try {
         const students = await auth.getStudents();
-        const allSessions = await auth.supabaseRequest('training_sessions?select=*&order=date.desc&limit=50');
+        const allSessions = await auth.getAllTrainingSessions({ vertical: 'all' });
         
         let html = `
             <div class="stats-cards">
@@ -2763,9 +2633,12 @@ async function loadTrainerDashboard() {
                 <i class="fas fa-history"></i>
                 <span>Последние тренировки</span>
             </div>
+            
+            <!-- КОНТЕЙНЕР С ПРОКРУТКОЙ -->
+            <div class="scrollable-container" style="max-height: 300px; overflow-y: auto; margin-top: 10px;">
         `;
         
-        if (allSessions && allSessions.length > 0) {
+        if (allSessions?.length) {
             allSessions.slice(0, 10).forEach(session => {
                 const student = students.find(s => s.id === session.user_id);
                 const clientType = clientTypes[session.client_type];
@@ -2796,6 +2669,9 @@ async function loadTrainerDashboard() {
             html += '<div style="text-align: center; padding: 20px; color: #666;">Нет данных о тренировках</div>';
         }
         
+        // ЗАКРЫВАЕМ КОНТЕЙНЕР
+        html += `</div>`;
+        
         dashboardContent.innerHTML = html;
         
     } catch (error) {
@@ -2812,7 +2688,7 @@ async function loadAllStudents() {
     
     try {
         const students = await auth.getStudents();
-        const allSessions = await auth.supabaseRequest('training_sessions?select=*');
+        const allSessions = await auth.getAllTrainingSessions({ vertical: 'all' });
         
         let html = `
             <div class="stats-cards">
@@ -2825,17 +2701,17 @@ async function loadAllStudents() {
             <div class="section-title" style="margin-top: 25px;">
                 <i class="fas fa-users"></i>
                 <span>Все ученики</span>
-                <span style="font-size: 12px; color: #666; margin-left: 10px;">Нажмите на вертикаль, чтобы свернуть/развернуть</span>
             </div>
+            
+            <!-- КОНТЕЙНЕР С ПРОКРУТКОЙ -->
+            <div class="scrollable-container" style="max-height: 400px; overflow-y: auto;">
         `;
         
         if (students.length > 0) {
             const studentsByGroup = {};
             students.forEach(student => {
                 const group = student.group_name || 'Без вертикали';
-                if (!studentsByGroup[group]) {
-                    studentsByGroup[group] = [];
-                }
+                if (!studentsByGroup[group]) studentsByGroup[group] = [];
                 studentsByGroup[group].push(student);
             });
             
@@ -2884,37 +2760,23 @@ async function loadAllStudents() {
                     </div>
                 `;
             }
+            
+            const firstGroup = Object.keys(studentsByGroup)[0];
+            if (firstGroup) {
+                setTimeout(() => toggleVerticalGroup(`group_${firstGroup.replace(/\s+/g, '_')}`, true), 100);
+            }
         } else {
             html += '<div style="text-align: center; padding: 20px; color: #666;">Нет учеников в системе</div>';
         }
         
-        studentsContent.innerHTML = html;
+        // ЗАКРЫВАЕМ КОНТЕЙНЕР
+        html += `</div>`;
         
-        const firstGroup = Object.keys(studentsByGroup)[0];
-        if (firstGroup) {
-            toggleVerticalGroup(`group_${firstGroup.replace(/\s+/g, '_')}`, true);
-        }
+        studentsContent.innerHTML = html;
         
     } catch (error) {
         console.error('Ошибка загрузки учеников:', error);
         studentsContent.innerHTML = '<p style="color: #dc3545;">Ошибка загрузки данных</p>';
-    }
-}
-
-function toggleVerticalGroup(groupId, forceExpand = false) {
-    const groupContent = document.getElementById(`${groupId}_content`);
-    const toggleIcon = document.querySelector(`#${groupId} .toggle-icon`);
-    
-    if (!groupContent || !toggleIcon) return;
-    
-    if (forceExpand || groupContent.classList.contains('expanded')) {
-        groupContent.classList.remove('expanded');
-        toggleIcon.classList.remove('expanded');
-        toggleIcon.innerHTML = '▼';
-    } else {
-        groupContent.classList.add('expanded');
-        toggleIcon.classList.add('expanded');
-        toggleIcon.innerHTML = '▲';
     }
 }
 
@@ -2934,7 +2796,7 @@ async function searchStudents() {
     
     try {
         const students = await auth.getStudents();
-        const allSessions = await auth.supabaseRequest('training_sessions?select=*');
+        const allSessions = await auth.getAllTrainingSessions({ vertical: 'all' });
         
         let filteredStudents = students;
         
@@ -2963,7 +2825,7 @@ async function searchStudents() {
                     if (toDate && regDate > toDate) return false;
                     
                     return true;
-                } catch (e) {
+                } catch {
                     return true;
                 }
             });
@@ -2991,6 +2853,9 @@ async function searchStudents() {
                 <span>Результаты поиска</span>
                 ${searchTerm ? `<span style="font-size: 12px; color: #666; margin-left: 10px;">По запросу: "${searchTerm}"</span>` : ''}
             </div>
+            
+            <!-- КОНТЕЙНЕР С ПРОКРУТКОЙ -->
+            <div class="scrollable-container" style="max-height: 400px; overflow-y: auto;">
         `;
         
         if (filteredStudents.length > 0) {
@@ -3043,6 +2908,9 @@ async function searchStudents() {
             html += '<div style="text-align: center; padding: 20px; color: #666;">По вашему запросу ничего не найдено</div>';
         }
         
+        // ЗАКРЫВАЕМ КОНТЕЙНЕР
+        html += `</div>`;
+        
         studentsContent.innerHTML = html;
         
     } catch (error) {
@@ -3069,7 +2937,7 @@ async function searchSessions() {
     
     try {
         const students = await auth.getStudents();
-        let allSessions = await auth.supabaseRequest('training_sessions?select=*&order=date.desc');
+        let allSessions = await auth.getAllTrainingSessions({ vertical: 'all' });
         
         const filterSelect = document.getElementById('sessionFilter');
         const filterValue = filterSelect ? filterSelect.value : 'all';
@@ -3087,9 +2955,7 @@ async function searchSessions() {
                 const scenario = session.scenario ? session.scenario.toLowerCase() : '';
                 const clientType = session.client_type ? session.client_type.toLowerCase() : '';
                 
-                return studentName.includes(searchTerm) ||
-                       scenario.includes(searchTerm) ||
-                       clientType.includes(searchTerm);
+                return studentName.includes(searchTerm) || scenario.includes(searchTerm) || clientType.includes(searchTerm);
             });
         }
         
@@ -3103,15 +2969,12 @@ async function searchSessions() {
                 
                 if (fromDate && sessionDate < fromDate) return false;
                 if (toDate && sessionDate > toDate) return false;
-                
                 return true;
             });
         }
         
         if (minScore > 0) {
-            filteredSessions = filteredSessions.filter(session => 
-                session.score && session.score >= minScore
-            );
+            filteredSessions = filteredSessions.filter(session => session.score && session.score >= minScore);
         }
         
         let html = `
@@ -3127,15 +2990,16 @@ async function searchSessions() {
                 <span>Результаты поиска тренировок</span>
                 ${searchTerm ? `<span style="font-size: 12px; color: #666; margin-left: 10px;">По запросу: "${searchTerm}"</span>` : ''}
             </div>
+            
+            <!-- КОНТЕЙНЕР С ПРОКРУТКОЙ -->
+            <div class="scrollable-container" style="max-height: 500px; overflow-y: auto;">
         `;
         
         if (filteredSessions.length > 0) {
             const sessionsByDate = {};
             filteredSessions.forEach(session => {
                 const date = new Date(session.date).toLocaleDateString('ru-RU');
-                if (!sessionsByDate[date]) {
-                    sessionsByDate[date] = [];
-                }
+                if (!sessionsByDate[date]) sessionsByDate[date] = [];
                 sessionsByDate[date].push(session);
             });
             
@@ -3154,6 +3018,7 @@ async function searchSessions() {
                         <div class="vertical-content" id="${dateId}_content">
                 `;
                 
+                // 3. ИЗМЕНЕНО: Показываем ВСЕ тренировки за выбранный день
                 dateSessions.forEach(session => {
                     const student = students.find(s => s.id === session.user_id);
                     const clientType = clientTypes[session.client_type];
@@ -3163,7 +3028,6 @@ async function searchSessions() {
                             <div class="student-info">
                                 <div class="student-name">${student ? student.username : 'Неизвестный ученик'}</div>
                                 <div class="student-group">${session.vertical || 'Без вертикали'} • ${clientType ? clientType.name : session.client_type}</div>
-                                <div style="margin-top: 5px; font-size: 12px; color: #666;">${session.scenario || 'Тренировка'}</div>
                             </div>
                             <div class="student-stats">
                                 <div class="stat-badge">${session.score}/5</div>
@@ -3186,17 +3050,20 @@ async function searchSessions() {
                     </div>
                 `;
             }
+            
+            const firstDate = Object.keys(sessionsByDate)[0];
+            if (firstDate) {
+                const dateId = `date_${firstDate.replace(/[\.\s]/g, '_')}`;
+                setTimeout(() => toggleVerticalGroup(dateId, true), 100);
+            }
         } else {
             html += '<div style="text-align: center; padding: 20px; color: #666;">По вашему запросу ничего не найдено</div>';
         }
         
-        sessionsContent.innerHTML = html;
+        // ЗАКРЫВАЕМ КОНТЕЙНЕР
+        html += `</div>`;
         
-        const firstDate = Object.keys(sessionsByDate)[0];
-        if (firstDate) {
-            const dateId = `date_${firstDate.replace(/[\.\s]/g, '_')}`;
-            toggleVerticalGroup(dateId, true);
-        }
+        sessionsContent.innerHTML = html;
         
     } catch (error) {
         console.error('Ошибка поиска тренировок:', error);
@@ -3225,9 +3092,12 @@ async function viewStudentSessions(studentId, studentName) {
                 <i class="fas fa-history"></i>
                 <span>Тренировки ученика: ${studentName}</span>
             </div>
+            
+            <!-- КОНТЕЙНЕР С ПРОКРУТКОЙ -->
+            <div class="scrollable-container" style="max-height: 400px; overflow-y: auto;">
         `;
         
-        if (sessions && sessions.length > 0) {
+        if (sessions?.length) {
             sessions.forEach(session => {
                 const clientType = clientTypes[session.client_type];
                 
@@ -3256,6 +3126,9 @@ async function viewStudentSessions(studentId, studentName) {
             html += '<div style="text-align: center; padding: 20px; color: #666;">У ученика нет тренировок</div>';
         }
         
+        // ЗАКРЫВАЕМ КОНТЕЙНЕР
+        html += `</div>`;
+        
         const tempContainer = document.createElement('div');
         tempContainer.innerHTML = html;
         
@@ -3273,11 +3146,11 @@ async function viewStudentSessions(studentId, studentName) {
 async function viewStudentChat(studentId, sessionId) {
     try {
         const session = await auth.supabaseRequest(`training_sessions?id=eq.${sessionId}`);
-        if (!session || session.length === 0) return;
+        if (!session?.length) return;
         
         const sessionData = session[0];
         const student = await auth.supabaseRequest(`users?id=eq.${studentId}`);
-        const studentName = student && student[0] ? student[0].username : 'Студент';
+        const studentName = student?.[0] ? student[0].username : 'Студент';
         const clientType = clientTypes[sessionData.client_type];
         
         document.getElementById('chatModalTitle').textContent = `Диалог: ${studentName}`;
@@ -3310,7 +3183,7 @@ async function viewStudentChat(studentId, sessionId) {
             messagesContainer.innerHTML = '<div style="text-align: center; color: #666; padding: 20px;">Нет данных о диалоге</div>';
         }
         
-        if (sessionData.ai_feedback && sessionData.ai_feedback.trim().length > 0) {
+        if (sessionData.ai_feedback?.trim()) {
             const aiFeedbackContainer = document.createElement('div');
             aiFeedbackContainer.style.cssText = 'margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;';
             aiFeedbackContainer.innerHTML = `
@@ -3320,7 +3193,7 @@ async function viewStudentChat(studentId, sessionId) {
             messagesContainer.appendChild(aiFeedbackContainer);
         }
         
-        if (sessionData.trainer_comments && sessionData.trainer_comments.length > 0) {
+        if (sessionData.trainer_comments?.length) {
             const commentsContainer = document.createElement('div');
             commentsContainer.style.cssText = 'margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;';
             commentsContainer.innerHTML = '<div style="font-weight: 600; margin-bottom: 10px; color: #333;">Комментарии тренера:</div>';
@@ -3375,7 +3248,7 @@ async function loadExistingComments(sessionId) {
     
     try {
         const session = await auth.supabaseRequest(`training_sessions?id=eq.${sessionId}`);
-        if (!session || session.length === 0) return;
+        if (!session?.length) return;
         
         const comments = session[0].trainer_comments || [];
         
@@ -3489,7 +3362,7 @@ function viewChatHistory(session) {
         messagesContainer.appendChild(messageDiv);
     });
     
-    if (session.ai_feedback && session.ai_feedback.trim().length > 0) {
+    if (session.ai_feedback?.trim()) {
         const aiFeedbackContainer = document.createElement('div');
         aiFeedbackContainer.style.cssText = 'margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;';
         aiFeedbackContainer.innerHTML = `
@@ -3499,7 +3372,7 @@ function viewChatHistory(session) {
         messagesContainer.appendChild(aiFeedbackContainer);
     }
     
-    if (session.trainer_comments && session.trainer_comments.length > 0) {
+    if (session.trainer_comments?.length) {
         const commentsContainer = document.createElement('div');
         commentsContainer.style.cssText = 'margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;';
         commentsContainer.innerHTML = '<div style="font-weight: 600; margin-bottom: 10px; color: #333;">Комментарии тренера:</div>';
@@ -3635,6 +3508,25 @@ style.textContent = `
         from { transform: translateX(0); opacity: 1; }
         to { transform: translateX(100%); opacity: 0; }
     }
+    
+    .toggle-icon {
+        transition: transform 0.3s;
+    }
+    
+    .toggle-icon.expanded {
+        transform: rotate(180deg);
+    }
+    
+    .vertical-content {
+        max-height: 0;
+        overflow: hidden;
+        transition: max-height 0.3s ease-out;
+    }
+    
+    .vertical-content.expanded {
+        max-height: 1000px;
+        transition: max-height 0.5s ease-in;
+    }
 `;
 document.head.appendChild(style);
 
@@ -3648,6 +3540,21 @@ function setupLeaderboardTabs() {
             updateLeaderboard(filter);
         });
     });
+}
+
+function toggleVerticalGroup(groupId, forceOpen = false) {
+    const content = document.getElementById(`${groupId}_content`);
+    const icon = document.querySelector(`#${groupId} .toggle-icon`);
+    
+    if (!content || !icon) return;
+    
+    if (forceOpen || content.classList.contains('expanded')) {
+        content.classList.remove('expanded');
+        icon.classList.remove('expanded');
+    } else {
+        content.classList.add('expanded');
+        icon.classList.add('expanded');
+    }
 }
 
 setInterval(() => {
@@ -3682,7 +3589,7 @@ async function loadTrainerStatistics() {
     
     try {
         const students = await auth.getStudents();
-        const allSessions = await auth.supabaseRequest('training_sessions?select=*');
+        const allSessions = await auth.getAllTrainingSessions({ vertical: 'all' });
         
         const statsByVertical = {};
         const studentsByVertical = {};
@@ -3724,6 +3631,9 @@ async function loadTrainerStatistics() {
                 <i class="fas fa-chart-bar"></i>
                 <span>Статистика по вертикалям</span>
             </div>
+            
+            <!-- КОНТЕЙНЕР С ПРОКРУТКОЙ -->
+            <div class="scrollable-container" style="max-height: 400px; overflow-y: auto;">
         `;
         
         for (const [vertical, stats] of Object.entries(statsByVertical)) {
@@ -3743,6 +3653,9 @@ async function loadTrainerStatistics() {
                 </div>
             `;
         }
+        
+        // ЗАКРЫВАЕМ КОНТЕЙНЕР
+        html += `</div>`;
         
         statisticsContent.innerHTML = html;
         

@@ -1534,4 +1534,159 @@ body {
     .scrollable-container::-webkit-scrollbar {
         width: 6px;
     }
+    /* ДОБАВИТЬ В КОНЕЦ ФАЙЛА style.css */
+
+/* Стили для кнопок выгрузки PDF */
+.pdf-export-section {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    margin: 20px 0;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    border-left: 4px solid #dc3545;
+}
+
+.pdf-export-options {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    margin-top: 15px;
+}
+
+.pdf-export-btn {
+    background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    transition: all 0.3s;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.pdf-export-btn:hover {
+    background: #c82333;
+    transform: translateY(-1px);
+}
+
+.pdf-export-btn-trainer {
+    background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    transition: all 0.3s;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.pdf-export-btn-trainer:hover {
+    background: #c82333;
+    transform: translateY(-1px);
+}
+
+.history-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.statistics-filters {
+    background: #f8f9fa;
+    border-radius: 8px;
+    padding: 15px;
+    margin-top: 15px;
+}
+
+.pagination-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 15px 0;
+    justify-content: center;
+}
+
+.page-info {
+    font-size: 14px;
+    color: #666;
+    font-weight: 600;
+}
+
+/* Стили для многострочного select */
+select[multiple] {
+    height: auto;
+    min-height: 100px;
+}
+
+select[multiple] option {
+    padding: 5px;
+    margin: 2px 0;
+}
+
+/* Дополнительные стили для модальных окон PDF */
+.pdf-modal .modal-content {
+    max-width: 500px;
+}
+
+.pdf-preview {
+    background: white;
+    border-radius: 8px;
+    padding: 15px;
+    margin: 15px 0;
+    border: 1px solid #ddd;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.pdf-preview-title {
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 10px;
+    font-size: 14px;
+}
+
+.pdf-preview-item {
+    padding: 8px;
+    border-bottom: 1px solid #eee;
+    font-size: 13px;
+}
+
+.pdf-preview-item:last-child {
+    border-bottom: none;
+}
+
+/* Анимации для кнопок */
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+}
+
+.btn-primary:hover .fa-file-pdf {
+    animation: pulse 0.5s ease-in-out;
+}
+
+/* Адаптивность для PDF кнопок */
+@media (max-width: 768px) {
+    .pdf-export-options {
+        grid-template-columns: 1fr;
+    }
+    
+    .history-actions {
+        flex-direction: column;
+        gap: 5px;
+    }
+    
+    .pdf-export-btn, .pdf-export-btn-trainer {
+        width: 100%;
+        justify-content: center;
+    }
+}
 }

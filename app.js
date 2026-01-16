@@ -1,3 +1,4 @@
+// app.js - полный код с добавлением функций выгрузки PDF
 let feedbackShown = false;
 const SUPABASE_URL = 'https://lpoaqliycyuhvdrwuyxj.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_uxkhuA-ngwjNjfaZdHCs7Q_FXOQRrSD';
@@ -16,7 +17,6 @@ class SupabaseAuth {
     async supabaseRequest(endpoint, method = 'GET', body = null) {
         const cacheKey = `${method}:${endpoint}`;
         
-        // Кэширование GET-запросов
         if (method === 'GET' && this.cache.has(cacheKey)) {
             return this.cache.get(cacheKey);
         }
@@ -38,7 +38,7 @@ class SupabaseAuth {
             
             if (method === 'GET') {
                 this.cache.set(cacheKey, data);
-                setTimeout(() => this.cache.delete(cacheKey), 30000); // Кэш на 30 сек
+                setTimeout(() => this.cache.delete(cacheKey), 30000);
             }
             
             return data;
@@ -275,7 +275,7 @@ class SupabaseAuth {
             
             if (response.ok) {
                 this.currentUser.stats = stats;
-                this.cache.clear(); // Очищаем кэш при изменении данных
+                this.cache.clear();
                 return true;
             }
             return false;
@@ -305,7 +305,7 @@ class SupabaseAuth {
             };
             
             await this.supabaseRequest('training_sessions', 'POST', session);
-            this.cache.clear(); // Очищаем кэш при добавлении новой сессии
+            this.cache.clear();
             return true;
         } catch (error) {
             console.error('Ошибка добавления сессии:', error);
@@ -448,7 +448,7 @@ class SupabaseAuth {
                 { trainer_comments: currentComments }
             );
             
-            this.cache.clear(); // Очищаем кэш при добавлении комментария
+            this.cache.clear();
             return true;
         } catch (error) {
             console.error('Ошибка добавления комментария:', error);
@@ -464,10 +464,74 @@ class SupabaseAuth {
                 endpoint += `&vertical=eq.${encodeURIComponent(filters.vertical)}`;
             }
             
+            if (filters.limit) {
+                endpoint += `&limit=${filters.limit}`;
+            }
+            
             const sessions = await this.supabaseRequest(endpoint);
             return sessions || [];
         } catch (error) {
             console.error('Ошибка получения всех тренировок:', error);
+            return [];
+        }
+    }
+    
+    async getTrainingSessionsWithPagination(page = 1, pageSize = 50, filters = {}) {
+        try {
+            let endpoint = 'training_sessions?select=*&order=date.desc';
+            
+            if (filters.vertical && filters.vertical !== 'all') {
+                endpoint += `&vertical=eq.${encodeURIComponent(filters.vertical)}`;
+            }
+            
+            const start = (page - 1) * pageSize;
+            const end = start + pageSize - 1;
+            endpoint += `&range=${start}-${end}`;
+            
+            const sessions = await this.supabaseRequest(endpoint);
+            return sessions || [];
+        } catch (error) {
+            console.error('Ошибка получения тренировок с пагинацией:', error);
+            return [];
+        }
+    }
+    
+    async getTrainingSessionsCount(filters = {}) {
+        try {
+            let endpoint = 'training_sessions?select=id';
+            
+            if (filters.vertical && filters.vertical !== 'all') {
+                endpoint += `&vertical=eq.${encodeURIComponent(filters.vertical)}`;
+            }
+            
+            const sessions = await this.supabaseRequest(endpoint);
+            return sessions?.length || 0;
+        } catch (error) {
+            console.error('Ошибка получения количества тренировок:', error);
+            return 0;
+        }
+    }
+    
+    async getCustomStatistics(filters) {
+        try {
+            let endpoint = 'training_sessions?select=*';
+            
+            if (filters.vertical && filters.vertical !== 'all') {
+                endpoint += `&vertical=eq.${encodeURIComponent(filters.vertical)}`;
+            }
+            
+            if (filters.dateFrom) {
+                endpoint += `&date=gte.${filters.dateFrom}`;
+            }
+            
+            if (filters.dateTo) {
+                endpoint += `&date=lte.${filters.dateTo}`;
+            }
+            
+            const sessions = await this.supabaseRequest(endpoint);
+            return sessions || [];
+        } catch (error) {
+            console.error('Ошибка получения статистики:', error);
             return [];
         }
     }
@@ -650,13 +714,10 @@ let isRandomClient = false;
 
 async function sendPromptToAI() {
     try {
-        // 1. Получаем информацию о типе клиента
         const clientType = clientTypes[selectedClientType];
         
-        // Формируем ЧЁТКУЮ инструкцию для AI
         let clientTypeInstruction;
         if (isRandomClient) {
-            // Для случайного - ВЫБИРАЕМ случайный тип НА УРОВНЕ КОДА
             const types = Object.keys(clientTypes);
             const randomTypeKey = types[Math.floor(Math.random() * types.length)];
             const randomType = clientTypes[randomTypeKey];
@@ -671,7 +732,6 @@ async function sendPromptToAI() {
             clientTypeInstruction = "ТИП КЛИЕНТА: СТАНДАРТНЫЙ";
         }
         
-        // 2. Получаем промпт для вертикали
         let promptContent = currentPrompt || `Ты играешь роль клиента. Веди диалог естественно, как реальный клиент обращается в поддержку.
 
 Вертикаль: ${auth.currentUser.group}
@@ -690,66 +750,54 @@ ${clientTypeInstruction}
 
 В остальных случаях - просто продолжай диалог как клиент.`;
 
-        // 3. ДЛЯ ВСЕХ ВЕРТИКАЛЕЙ: удаляем старые инструкции
         promptContent = promptContent.replace(/выбери.*?случайно.*?\n/gi, '');
         promptContent = promptContent.replace(/выбери.*?один.*?\n/gi, '');
         promptContent = promptContent.replace(/выбери.*?сценарий.*?\n/gi, '');
         
-        // 4. ДЛЯ ВСЕХ ВЕРТИКАЛЕЙ: ищем сценарии (если есть)
         const hasScenarios = promptContent.includes('Сценарий') || 
                             promptContent.includes('сценарий') ||
                             promptContent.match(/\d+\.\s+.*?(?=\n|$)/) ||
                             promptContent.match(/-\s+.*?(?=\n|$)/);
         
         if (hasScenarios) {
-            // Разбиваем на строки
             const lines = promptContent.split('\n');
             const scenarioLines = [];
             
-            // Ищем строки, которые выглядят как сценарии
             for (const line of lines) {
                 const trimmed = line.trim();
-                // Разные форматы сценариев
                 if ((trimmed.includes('Сценарий') || trimmed.includes('сценарий')) && 
                     trimmed.length > 15 && 
                     !trimmed.startsWith('**СЦЕНАРИИ') &&
                     !trimmed.startsWith('**сценарии')) {
                     scenarioLines.push(trimmed);
                 }
-                // Формат "1. Описание" или "- Описание"
                 else if ((trimmed.match(/^\d+\.\s+/) || trimmed.match(/^-\s+/)) && 
                          trimmed.length > 10) {
                     scenarioLines.push(trimmed);
                 }
             }
             
-            // Если нашли сценарии - выбираем случайный
             if (scenarioLines.length > 0) {
                 const randomIndex = Math.floor(Math.random() * scenarioLines.length);
                 const chosenScenario = scenarioLines[randomIndex];
                 
-                // Добавляем выбранный сценарий в начало
                 promptContent = `ВЫБРАННЫЙ СЦЕНАРИЙ:\n${chosenScenario}\n\n${promptContent}`;
                 
-                // Удаляем старые заголовки про выбор сценариев
                 promptContent = promptContent.replace(/\*\*СЦЕНАРИИ[\s\S]*?(?=\n\*\*|\n\n|$)/gi, '');
                 promptContent = promptContent.replace(/\*\*сценарии[\s\S]*?(?=\n\*\*|\n\n|$)/gi, '');
             }
         }
         
-        // 5. Убедимся что инструкция по типу клиента есть
         if (!promptContent.includes(clientTypeInstruction)) {
             promptContent = `${clientTypeInstruction}\n\n${promptContent}`;
         }
         
-        // 6. ОТЛАДКА
         console.log("=== ФИНАЛЬНЫЙ ПРОМПТ ДЛЯ ВСЕХ ВЕРТИКАЛЕЙ ===");
         console.log("Тип клиента:", isRandomClient ? "Случайный" : selectedClientType);
         console.log("Вертикаль:", auth.currentUser?.group);
         console.log("Длина:", promptContent.length, "символов");
         console.log("Первые 400 символов:", promptContent.substring(0, 400));
         
-        // 7. Отправляем к AI
         const systemMessage = {
             role: "system",
             content: promptContent
@@ -800,7 +848,6 @@ ${clientTypeInstruction}
     }
 }
         
-
 document.addEventListener('DOMContentLoaded', async function() {
     const savedUser = localStorage.getItem('dialogue_currentUser');
     
@@ -1192,6 +1239,27 @@ function loadStudentInterface() {
                     </div>
                 </div>
                 
+                <div class="pdf-export-section">
+                    <div class="section-title">
+                        <i class="fas fa-file-pdf"></i>
+                        <span>Выгрузка диалогов в PDF</span>
+                    </div>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Вы можете сохранить любой диалог в формате PDF для дальнейшего анализа или отчета.
+                    </p>
+                    <div class="pdf-export-options">
+                        <button class="btn btn-primary" onclick="exportAllSessionsPDF()">
+                            <i class="fas fa-download"></i> Выгрузить все диалоги
+                        </button>
+                        <button class="btn btn-secondary" onclick="showDateRangePDFExport()">
+                            <i class="fas fa-calendar"></i> По датам
+                        </button>
+                        <button class="btn btn-secondary" onclick="exportCurrentSessionPDF()">
+                            <i class="fas fa-file-export"></i> Текущую сессию
+                        </button>
+                    </div>
+                </div>
+                
                 <div style="margin-top: 15px;" id="historyList"></div>
             </div>
         </div>
@@ -1220,7 +1288,6 @@ function selectClientType(type, isRandom = false) {
         selectedClientType = type;
         isRandomClient = false;
     } else {
-        // Для случайного клиента не выделяем опцию
         selectedClientType = type;
         isRandomClient = true;
     }
@@ -1228,7 +1295,6 @@ function selectClientType(type, isRandom = false) {
     document.getElementById('startTrainingBtn').disabled = false;
     
     if (isRandomClient) {
-        // Не показываем тип случайного клиента
         document.getElementById('scenarioTitle').textContent = 'Случайный клиент';
         document.getElementById('scenarioDescription').textContent = 'Выбран случайный тип клиента. Диалог начнется с сообщения от клиента.';
     } else {
@@ -1288,7 +1354,6 @@ async function startTraining() {
     const chatMessagesDiv = document.getElementById('chatMessages');
     chatMessagesDiv.innerHTML = '';
     
-    // Диалог начнется с первого сообщения от AI
     await sendPromptToAI();
     
     startTrainingTimer();
@@ -1458,7 +1523,7 @@ function extractAIFeedback(aiMessage) {
         }
     }
     
-    return aiMessage.substring(Math.max(0, aiMessage.length - 3000)).trim(); // Увеличиваем до 3000 символов
+    return aiMessage.substring(Math.max(0, aiMessage.length - 3000)).trim();
 }
 
 function evaluateDialogue(messages, clientType) {
@@ -2525,9 +2590,14 @@ async function renderHistory() {
                         ${hasTrainerComments ? '<span style="margin-left: 10px; color: #ffc107;"><i class="fas fa-comment"></i> Есть комментарий тренера</span>' : ''}
                         ${hasAIFeedback ? '<span style="margin-left: 10px; color: #667eea;"><i class="fas fa-robot"></i> Есть обратная связь от AI</span>' : ''}
                     </div>
-                    <button class="view-chat-btn" onclick="event.stopPropagation(); viewChatHistory(${JSON.stringify(item).replace(/"/g, '&quot;')})">
-                        <i class="fas fa-comments"></i> Просмотреть чат
-                    </button>
+                    <div class="history-actions">
+                        <button class="view-chat-btn" onclick="event.stopPropagation(); viewChatHistory(${JSON.stringify(item).replace(/"/g, '&quot;')})">
+                            <i class="fas fa-comments"></i> Просмотреть чат
+                        </button>
+                        <button class="pdf-export-btn" onclick="event.stopPropagation(); exportSessionPDF(${JSON.stringify(item).replace(/"/g, '&quot;')})">
+                            <i class="fas fa-file-pdf"></i> PDF
+                        </button>
+                    </div>
                 </div>
                 ${item.evaluation ? `<div style="margin-top: 8px; padding: 8px; background: #f8f9fa; border-radius: 6px; font-size: 12px; color: #555;">${item.evaluation}</div>` : ''}
             `;
@@ -2633,7 +2703,7 @@ function loadTrainerInterface() {
                 <div class="section-title">
                     <i class="fas fa-history"></i>
                     <span>Все тренировки</span>
-                    <div style="margin-left: auto;">
+                    <div style="margin-left: auto; display: flex; gap: 10px;">
                         <select id="sessionFilter" onchange="filterSessions()" style="padding: 6px 12px; border-radius: 6px; border: 1px solid #ddd; font-size: 13px;">
                             <option value="all">Все вертикали</option>
                             <option value="Программа лояльности">Лояльность</option>
@@ -2643,6 +2713,9 @@ function loadTrainerInterface() {
                             <option value="Аптека">Аптека</option>
                             <option value="Сборка">Сборка</option>
                         </select>
+                        <button class="btn btn-primary" onclick="exportTrainerStatisticsPDF()" style="padding: 6px 12px; font-size: 13px;">
+                            <i class="fas fa-file-pdf"></i> Статистика
+                        </button>
                     </div>
                 </div>
                 
@@ -2675,6 +2748,64 @@ function loadTrainerInterface() {
                     <i class="fas fa-chart-bar"></i>
                     <span>Статистика по системе</span>
                 </div>
+                
+                <div class="pdf-export-section">
+                    <div class="section-title">
+                        <i class="fas fa-file-pdf"></i>
+                        <span>Выгрузка статистики в PDF</span>
+                    </div>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Настройте параметры для выгрузки статистики на планерки и анализ.
+                    </p>
+                    
+                    <div class="statistics-filters">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px;">
+                            <div>
+                                <label style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 13px;">Вертикаль:</label>
+                                <select id="statsVerticalFilter" class="trainer-search-input">
+                                    <option value="all">Все вертикали</option>
+                                    <option value="Программа лояльности">Лояльность</option>
+                                    <option value="ОПК">ОПК</option>
+                                    <option value="Фудтех">Фудтех</option>
+                                    <option value="Маркет">Маркет</option>
+                                    <option value="Аптека">Аптека</option>
+                                    <option value="Сборка">Сборка</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 13px;">Дата с:</label>
+                                <input type="date" id="statsDateFrom" class="trainer-search-input">
+                            </div>
+                            <div>
+                                <label style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 13px;">Дата по:</label>
+                                <input type="date" id="statsDateTo" class="trainer-search-input">
+                            </div>
+                            <div>
+                                <label style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 13px;">Показатели:</label>
+                                <select id="statsMetrics" multiple class="trainer-search-input" style="height: 120px;">
+                                    <option value="sessions" selected>Количество тренировок</option>
+                                    <option value="avg_score" selected>Средний балл</option>
+                                    <option value="top_students" selected>Топ учеников</option>
+                                    <option value="client_types" selected>Распределение по типам клиентов</option>
+                                    <option value="daily_activity" selected>Активность по дням</option>
+                                    <option value="time_distribution">Распределение по времени суток</option>
+                                    <option value="score_distribution">Распределение оценок</option>
+                                    <option value="trainer_comments">Комментарии тренеров</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div style="display: flex; gap: 10px;">
+                            <button class="btn btn-primary" onclick="generateCustomStatistics()">
+                                <i class="fas fa-chart-bar"></i> Сгенерировать статистику
+                            </button>
+                            <button class="btn btn-secondary" onclick="exportCustomStatisticsPDF()">
+                                <i class="fas fa-file-pdf"></i> Выгрузить в PDF
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
                 <div id="trainerStatisticsContent">
                     <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
                         Загрузка статистики...
@@ -2687,7 +2818,6 @@ function loadTrainerInterface() {
     loadTrainerDashboard();
 }
 
-// ИСПРАВЛЕНИЕ 1: Добавляем контейнеры с прокруткой в панели тренера
 async function loadTrainerDashboard() {
     const dashboardContent = document.getElementById('trainerDashboardContent');
     if (!dashboardContent) return;
@@ -2696,7 +2826,7 @@ async function loadTrainerDashboard() {
     
     try {
         const students = await auth.getStudents();
-        const allSessions = await auth.getAllTrainingSessions({ vertical: 'all' });
+        const allSessions = await auth.getAllTrainingSessions({ vertical: 'all', limit: 50 });
         
         let html = `
             <div class="stats-cards">
@@ -2708,20 +2838,25 @@ async function loadTrainerDashboard() {
                     <div class="value">${allSessions?.length || 0}</div>
                     <div class="label">Всего тренировок</div>
                 </div>
+                <div class="stat-card">
+                    <div class="value">${new Date().toLocaleDateString('ru-RU')}</div>
+                    <div class="label">Сегодня</div>
+                </div>
             </div>
             
             <div class="section-title" style="margin-top: 25px;">
                 <i class="fas fa-history"></i>
-                <span>Последние тренировки</span>
+                <span>Последние тренировки (последние 50)</span>
+                <button class="btn btn-secondary" onclick="exportLatestSessionsPDF()" style="margin-left: auto; padding: 5px 10px; font-size: 12px;">
+                    <i class="fas fa-file-pdf"></i> Выгрузить
+                </button>
             </div>
             
-            <!-- КОНТЕЙНЕР С ПРОКРУТКОЙ -->
             <div class="scrollable-container" style="max-height: 400px; overflow-y: auto; margin-top: 10px;">
         `;
         
         if (allSessions?.length) {
-            // Показываем больше тренировок
-            allSessions.slice(0, 50).forEach(session => {
+            allSessions.forEach(session => {
                 const student = students.find(s => s.id === session.user_id);
                 const clientType = clientTypes[session.client_type];
                 
@@ -2743,6 +2878,9 @@ async function loadTrainerDashboard() {
                             <button class="comment-btn" onclick="openCommentModal('${session.user_id}', '${session.id}', '${student ? student.username : 'Неизвестный'}')">
                                 <i class="fas fa-comment"></i> Комментарий
                             </button>
+                            <button class="pdf-export-btn-trainer" onclick="exportStudentSessionPDF('${session.user_id}', '${session.id}')">
+                                <i class="fas fa-file-pdf"></i> PDF
+                            </button>
                         </div>
                     </div>
                 `;
@@ -2751,7 +2889,6 @@ async function loadTrainerDashboard() {
             html += '<div style="text-align: center; padding: 20px; color: #666;">Нет данных о тренировках</div>';
         }
         
-        // ЗАКРЫВАЕМ КОНТЕЙНЕР
         html += `</div>`;
         
         dashboardContent.innerHTML = html;
@@ -2783,9 +2920,11 @@ async function loadAllStudents() {
             <div class="section-title" style="margin-top: 25px;">
                 <i class="fas fa-users"></i>
                 <span>Все ученики</span>
+                <button class="btn btn-secondary" onclick="exportAllStudentsPDF()" style="margin-left: auto; padding: 5px 10px; font-size: 12px;">
+                    <i class="fas fa-file-pdf"></i> Выгрузить список
+                </button>
             </div>
             
-            <!-- КОНТЕЙНЕР С ПРОКРУТКОЙ -->
             <div class="scrollable-container" style="max-height: 500px; overflow-y: auto;">
         `;
         
@@ -2812,7 +2951,6 @@ async function loadAllStudents() {
                         <div class="vertical-content" id="${groupId}_content">
                 `;
                 
-                // Показываем всех учеников в группе
                 groupStudents.forEach(student => {
                     const studentSessions = allSessions?.filter(s => s.user_id === student.id) || [];
                     const totalScore = studentSessions.reduce((sum, s) => sum + (s.score || 0), 0);
@@ -2833,6 +2971,9 @@ async function loadAllStudents() {
                                 <button class="view-chat-btn-trainer" onclick="viewStudentSessions('${student.id}', '${student.username}')">
                                     <i class="fas fa-history"></i> Тренировки
                                 </button>
+                                <button class="pdf-export-btn-trainer" onclick="exportStudentAllSessionsPDF('${student.id}', '${student.username}')">
+                                    <i class="fas fa-file-pdf"></i> Все диалоги
+                                </button>
                             </div>
                         </div>
                     `;
@@ -2852,7 +2993,6 @@ async function loadAllStudents() {
             html += '<div style="text-align: center; padding: 20px; color: #666;">Нет учеников в системе</div>';
         }
         
-        // ЗАКРЫВАЕМ КОНТЕЙНЕР
         html += `</div>`;
         
         studentsContent.innerHTML = html;
@@ -2935,9 +3075,11 @@ async function searchStudents() {
                 <i class="fas fa-users"></i>
                 <span>Результаты поиска</span>
                 ${searchTerm ? `<span style="font-size: 12px; color: #666; margin-left: 10px;">По запросу: "${searchTerm}"</span>` : ''}
+                <button class="btn btn-secondary" onclick="exportSearchResultsPDF()" style="margin-left: auto; padding: 5px 10px; font-size: 12px;">
+                    <i class="fas fa-file-pdf"></i> Выгрузить
+                </button>
             </div>
             
-            <!-- КОНТЕЙНЕР С ПРОКРУТКОЙ -->
             <div class="scrollable-container" style="max-height: 500px; overflow-y: auto;">
         `;
         
@@ -2991,7 +3133,6 @@ async function searchStudents() {
             html += '<div style="text-align: center; padding: 20px; color: #666;">По вашему запросу ничего не найдено</div>';
         }
         
-        // ЗАКРЫВАЕМ КОНТЕЙНЕР
         html += `</div>`;
         
         studentsContent.innerHTML = html;
@@ -3001,6 +3142,9 @@ async function searchStudents() {
         studentsContent.innerHTML = '<p style="color: #dc3545;">Ошибка поиска</p>';
     }
 }
+
+let currentTrainerPage = 1;
+const trainerPageSize = 100;
 
 async function searchSessions() {
     const searchInput = document.getElementById('sessionSearchInput');
@@ -3020,7 +3164,7 @@ async function searchSessions() {
     
     try {
         const students = await auth.getStudents();
-        let allSessions = await auth.getAllTrainingSessions({ vertical: 'all' });
+        let allSessions = await auth.getTrainingSessionsWithPagination(currentTrainerPage, trainerPageSize, { vertical: 'all' });
         
         const filterSelect = document.getElementById('sessionFilter');
         const filterValue = filterSelect ? filterSelect.value : 'all';
@@ -3060,11 +3204,22 @@ async function searchSessions() {
             filteredSessions = filteredSessions.filter(session => session.score && session.score >= minScore);
         }
         
+        const totalSessionsCount = await auth.getTrainingSessionsCount({ vertical: filterValue });
+        const totalPages = Math.ceil(totalSessionsCount / trainerPageSize);
+        
         let html = `
             <div class="stats-cards">
                 <div class="stat-card">
                     <div class="value">${filteredSessions.length}</div>
                     <div class="label">Найдено тренировок</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value">${totalSessionsCount}</div>
+                    <div class="label">Всего тренировок в системе</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value">${currentTrainerPage}/${totalPages}</div>
+                    <div class="label">Страница</div>
                 </div>
             </div>
             
@@ -3072,9 +3227,20 @@ async function searchSessions() {
                 <i class="fas fa-history"></i>
                 <span>Результаты поиска тренировок</span>
                 ${searchTerm ? `<span style="font-size: 12px; color: #666; margin-left: 10px;">По запросу: "${searchTerm}"</span>` : ''}
+                <div style="margin-left: auto; display: flex; gap: 10px; align-items: center;">
+                    <button class="btn btn-secondary" onclick="changeTrainerPage(${currentTrainerPage - 1})" ${currentTrainerPage <= 1 ? 'disabled' : ''}>
+                        <i class="fas fa-chevron-left"></i>
+                    </button>
+                    <span>Страница ${currentTrainerPage} из ${totalPages}</span>
+                    <button class="btn btn-secondary" onclick="changeTrainerPage(${currentTrainerPage + 1})" ${currentTrainerPage >= totalPages ? 'disabled' : ''}>
+                        <i class="fas fa-chevron-right"></i>
+                    </button>
+                    <button class="btn btn-primary" onclick="exportFilteredSessionsPDF()" style="padding: 6px 12px; font-size: 12px;">
+                        <i class="fas fa-file-pdf"></i> Выгрузить
+                    </button>
+                </div>
             </div>
             
-            <!-- КОНТЕЙНЕР С ПРОКРУТКОЙ -->
             <div class="scrollable-container" style="max-height: 600px; overflow-y: auto;">
         `;
         
@@ -3101,7 +3267,6 @@ async function searchSessions() {
                         <div class="vertical-content" id="${dateId}_content">
                 `;
                 
-                // Показываем ВСЕ тренировки за выбранный день
                 dateSessions.forEach(session => {
                     const student = students.find(s => s.id === session.user_id);
                     const clientType = clientTypes[session.client_type];
@@ -3123,6 +3288,9 @@ async function searchSessions() {
                                 <button class="comment-btn" onclick="openCommentModal('${session.user_id}', '${session.id}', '${student ? student.username : 'Неизвестный'}')">
                                     <i class="fas fa-comment"></i> Комментарий
                                 </button>
+                                <button class="pdf-export-btn-trainer" onclick="exportStudentSessionPDF('${session.user_id}', '${session.id}')">
+                                    <i class="fas fa-file-pdf"></i> PDF
+                                </button>
                             </div>
                         </div>
                     `;
@@ -3143,7 +3311,6 @@ async function searchSessions() {
             html += '<div style="text-align: center; padding: 20px; color: #666;">По вашему запросу ничего не найдено</div>';
         }
         
-        // ЗАКРЫВАЕМ КОНТЕЙНЕР
         html += `</div>`;
         
         sessionsContent.innerHTML = html;
@@ -3152,6 +3319,18 @@ async function searchSessions() {
         console.error('Ошибка поиска тренировок:', error);
         sessionsContent.innerHTML = '<p style="color: #dc3545;">Ошибка поиска</p>';
     }
+}
+
+async function changeTrainerPage(newPage) {
+    if (newPage < 1) return;
+    
+    const totalSessionsCount = await auth.getTrainingSessionsCount({ vertical: document.getElementById('sessionFilter').value });
+    const totalPages = Math.ceil(totalSessionsCount / trainerPageSize);
+    
+    if (newPage > totalPages) return;
+    
+    currentTrainerPage = newPage;
+    await searchSessions();
 }
 
 function formatTime(dateString) {
@@ -3163,20 +3342,23 @@ function formatTime(dateString) {
 }
 
 async function loadAllSessions() {
+    currentTrainerPage = 1;
     await searchSessions();
 }
 
 async function viewStudentSessions(studentId, studentName) {
     try {
-        const sessions = await auth.supabaseRequest(`training_sessions?user_id=eq.${studentId}&order=date.desc`);
+        const sessions = await auth.supabaseRequest(`training_sessions?user_id=eq.${studentId}&order=date.desc&limit=100`);
         
         let html = `
             <div class="section-title">
                 <i class="fas fa-history"></i>
                 <span>Тренировки ученика: ${studentName}</span>
+                <button class="btn btn-primary" onclick="exportStudentAllSessionsPDF('${studentId}', '${studentName}')" style="margin-left: auto; padding: 6px 12px; font-size: 12px;">
+                    <i class="fas fa-file-pdf"></i> Выгрузить все
+                </button>
             </div>
             
-            <!-- КОНТЕЙНЕР С ПРОКРУТКОЙ -->
             <div class="scrollable-container" style="max-height: 500px; overflow-y: auto;">
         `;
         
@@ -3201,6 +3383,9 @@ async function viewStudentSessions(studentId, studentName) {
                             <button class="comment-btn" onclick="openCommentModal('${studentId}', '${session.id}', '${studentName}')">
                                 <i class="fas fa-comment"></i> Комментарий
                             </button>
+                            <button class="pdf-export-btn-trainer" onclick="exportStudentSessionPDF('${studentId}', '${session.id}')">
+                                <i class="fas fa-file-pdf"></i> PDF
+                            </button>
                         </div>
                     </div>
                 `;
@@ -3209,7 +3394,6 @@ async function viewStudentSessions(studentId, studentName) {
             html += '<div style="text-align: center; padding: 20px; color: #666;">У ученика нет тренировок</div>';
         }
         
-        // ЗАКРЫВАЕМ КОНТЕЙНЕР
         html += `</div>`;
         
         const tempContainer = document.createElement('div');
@@ -3266,7 +3450,6 @@ async function viewStudentChat(studentId, sessionId) {
             messagesContainer.innerHTML = '<div style="text-align: center; color: #666; padding: 20px;">Нет данных о диалоге</div>';
         }
         
-        // ИСПРАВЛЕНИЕ 2: Увеличиваем отображение полной обратной связи
         if (sessionData.ai_feedback?.trim()) {
             const aiFeedbackContainer = document.createElement('div');
             aiFeedbackContainer.style.cssText = 'margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;';
@@ -3298,12 +3481,17 @@ async function viewStudentChat(studentId, sessionId) {
             messagesContainer.appendChild(commentsContainer);
         }
         
-        const commentButton = document.createElement('button');
-        commentButton.className = 'btn btn-primary';
-        commentButton.style.cssText = 'margin-top: 15px; align-self: center;';
-        commentButton.innerHTML = '<i class="fas fa-comment"></i> Добавить комментарий';
-        commentButton.onclick = () => openCommentModal(studentId, sessionId, studentName);
-        messagesContainer.appendChild(commentButton);
+        const actionButtons = document.createElement('div');
+        actionButtons.style.cssText = 'margin-top: 15px; display: flex; gap: 10px; justify-content: center;';
+        actionButtons.innerHTML = `
+            <button class="btn btn-primary" onclick="exportStudentSessionPDF('${studentId}', '${sessionId}')">
+                <i class="fas fa-file-pdf"></i> Выгрузить в PDF
+            </button>
+            <button class="btn btn-secondary" onclick="openCommentModal('${studentId}', '${sessionId}', '${studentName}')">
+                <i class="fas fa-comment"></i> Добавить комментарий
+            </button>
+        `;
+        messagesContainer.appendChild(actionButtons);
         
         document.getElementById('chatModal').style.display = 'flex';
         
@@ -3401,6 +3589,7 @@ function closeCommentModal() {
 }
 
 function filterSessions() {
+    currentTrainerPage = 1;
     loadAllSessions();
 }
 
@@ -3446,7 +3635,6 @@ function viewChatHistory(session) {
         messagesContainer.appendChild(messageDiv);
     });
     
-    // ИСПРАВЛЕНИЕ 2: Увеличиваем отображение полной обратной связи
     if (session.ai_feedback?.trim()) {
         const aiFeedbackContainer = document.createElement('div');
         aiFeedbackContainer.style.cssText = 'margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;';
@@ -3478,6 +3666,15 @@ function viewChatHistory(session) {
         messagesContainer.appendChild(commentsContainer);
     }
     
+    const actionButtons = document.createElement('div');
+    actionButtons.style.cssText = 'margin-top: 15px; display: flex; gap: 10px; justify-content: center;';
+    actionButtons.innerHTML = `
+        <button class="btn btn-primary" onclick="exportSessionPDF(${JSON.stringify(session).replace(/"/g, '&quot;')})">
+            <i class="fas fa-file-pdf"></i> Выгрузить в PDF
+        </button>
+    `;
+    messagesContainer.appendChild(actionButtons);
+    
     setTimeout(() => {
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
     }, 100);
@@ -3505,7 +3702,6 @@ function formatDuration(seconds) {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
-// ИСПРАВЛЕНИЕ 2: Улучшаем показ полной обратной связи в модальном окне результатов
 function showResultModal(title, scenario, icon, xpEarned, evaluation, duration, aiFeedback = "") {
     document.getElementById('resultTitle').textContent = title;
     document.getElementById('resultIcon').textContent = icon;
@@ -3535,7 +3731,6 @@ function showResultModal(title, scenario, icon, xpEarned, evaluation, duration, 
     if (aiFeedback && aiFeedback.trim().length > 0) {
         aiFeedbackContent.textContent = aiFeedback;
         aiFeedbackContainer.style.display = 'block';
-        // Увеличиваем высоту для полного отображения
         aiFeedbackContent.style.maxHeight = '400px';
         aiFeedbackContent.style.overflowY = 'auto';
     } else {
@@ -3721,7 +3916,6 @@ async function loadTrainerStatistics() {
                 <span>Статистика по вертикалям</span>
             </div>
             
-            <!-- КОНТЕЙНЕР С ПРОКРУТКОЙ -->
             <div class="scrollable-container" style="max-height: 500px; overflow-y: auto;">
         `;
         
@@ -3743,7 +3937,6 @@ async function loadTrainerStatistics() {
             `;
         }
         
-        // ЗАКРЫВАЕМ КОНТЕЙНЕР
         html += `</div>`;
         
         statisticsContent.innerHTML = html;
@@ -3752,4 +3945,244 @@ async function loadTrainerStatistics() {
         console.error('Ошибка загрузки статистики:', error);
         statisticsContent.innerHTML = '<p style="color: #dc3545;">Ошибка загрузки данных</p>';
     }
+}
+
+async function generateCustomStatistics() {
+    const vertical = document.getElementById('statsVerticalFilter').value;
+    const dateFrom = document.getElementById('statsDateFrom').value;
+    const dateTo = document.getElementById('statsDateTo').value;
+    const metricsSelect = document.getElementById('statsMetrics');
+    const selectedMetrics = Array.from(metricsSelect.selectedOptions).map(option => option.value);
+    
+    try {
+        const filters = {
+            vertical: vertical !== 'all' ? vertical : null,
+            dateFrom: dateFrom || null,
+            dateTo: dateTo || null
+        };
+        
+        const sessions = await auth.getCustomStatistics(filters);
+        const students = await auth.getStudents();
+        
+        let statsHTML = `
+            <div class="section-title" style="margin-top: 25px;">
+                <i class="fas fa-chart-bar"></i>
+                <span>Сгенерированная статистика</span>
+            </div>
+            
+            <div class="stats-cards">
+        `;
+        
+        if (selectedMetrics.includes('sessions')) {
+            statsHTML += `
+                <div class="stat-card">
+                    <div class="value">${sessions.length}</div>
+                    <div class="label">Тренировок</div>
+                </div>
+            `;
+        }
+        
+        if (selectedMetrics.includes('avg_score') && sessions.length > 0) {
+            const totalScore = sessions.reduce((sum, session) => sum + (session.score || 0), 0);
+            const avgScore = (totalScore / sessions.length).toFixed(2);
+            statsHTML += `
+                <div class="stat-card">
+                    <div class="value">${avgScore}</div>
+                    <div class="label">Средний балл</div>
+                </div>
+            `;
+        }
+        
+        if (selectedMetrics.includes('top_students')) {
+            const studentStats = {};
+            sessions.forEach(session => {
+                if (!studentStats[session.user_id]) {
+                    studentStats[session.user_id] = {
+                        sessions: 0,
+                        totalScore: 0
+                    };
+                }
+                studentStats[session.user_id].sessions++;
+                studentStats[session.user_id].totalScore += session.score || 0;
+            });
+            
+            const topStudents = Object.entries(studentStats)
+                .map(([userId, stats]) => {
+                    const student = students.find(s => s.id === userId);
+                    return {
+                        name: student ? student.username : 'Неизвестный',
+                        sessions: stats.sessions,
+                        avgScore: stats.sessions > 0 ? (stats.totalScore / stats.sessions).toFixed(2) : '0.00'
+                    };
+                })
+                .sort((a, b) => b.sessions - a.sessions)
+                .slice(0, 10);
+            
+            statsHTML += `
+                <div class="stat-card" style="grid-column: span 2;">
+                    <div class="value">Топ-10</div>
+                    <div class="label">Активных учеников</div>
+                </div>
+            `;
+        }
+        
+        statsHTML += `</div>`;
+        
+        if (selectedMetrics.includes('client_types')) {
+            const clientTypeStats = {};
+            sessions.forEach(session => {
+                const type = session.client_type || 'Неизвестно';
+                if (!clientTypeStats[type]) {
+                    clientTypeStats[type] = 0;
+                }
+                clientTypeStats[type]++;
+            });
+            
+            statsHTML += `
+                <div class="section-title" style="margin-top: 20px;">
+                    <i class="fas fa-users"></i>
+                    <span>Распределение по типам клиентов</span>
+                </div>
+                <div class="scrollable-container" style="max-height: 200px;">
+            `;
+            
+            Object.entries(clientTypeStats).forEach(([type, count]) => {
+                const percentage = ((count / sessions.length) * 100).toFixed(1);
+                statsHTML += `
+                    <div class="student-item">
+                        <div class="student-info">
+                            <div class="student-name">${clientTypes[type]?.name || type}</div>
+                        </div>
+                        <div class="student-stats">
+                            <div class="stat-badge">${count}</div>
+                            <div class="stat-badge">${percentage}%</div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            statsHTML += `</div>`;
+        }
+        
+        document.getElementById('trainerStatisticsContent').innerHTML = statsHTML;
+        
+    } catch (error) {
+        console.error('Ошибка генерации статистики:', error);
+        alert('Ошибка при генерации статистики');
+    }
+}
+
+async function exportCustomStatisticsPDF() {
+    alert('Функция выгрузки статистики в PDF будет реализована в следующей версии');
+}
+
+async function exportAllSessionsPDF() {
+    if (!auth.currentUser) return;
+    
+    try {
+        const sessions = await auth.getUserTrainingHistory(auth.currentUser.id);
+        if (sessions.length === 0) {
+            alert('У вас нет тренировок для выгрузки');
+            return;
+        }
+        
+        alert(`Будет выгружено ${sessions.length} сессий. Функция экспорта в PDF будет реализована в следующей версии.`);
+        
+    } catch (error) {
+        console.error('Ошибка выгрузки PDF:', error);
+        alert('Ошибка при подготовке данных для выгрузки');
+    }
+}
+
+function showDateRangePDFExport() {
+    const dateRangeHTML = `
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="result-icon">📅</div>
+            <h2 class="result-title">Выгрузка по датам</h2>
+            
+            <div class="form-group">
+                <label>Дата с:</label>
+                <input type="date" id="exportDateFrom" class="trainer-search-input">
+            </div>
+            
+            <div class="form-group">
+                <label>Дата по:</label>
+                <input type="date" id="exportDateTo" class="trainer-search-input">
+            </div>
+            
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button class="btn btn-primary" onclick="exportDateRangePDF()" style="flex: 1;">
+                    Выгрузить
+                </button>
+                <button class="btn btn-secondary" onclick="closeModal()" style="flex: 1;">
+                    Отмена
+                </button>
+            </div>
+        </div>
+    `;
+    
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.display = 'flex';
+    modal.innerHTML = dateRangeHTML;
+    document.body.appendChild(modal);
+    
+    window.closeModal = function() {
+        modal.remove();
+    };
+}
+
+async function exportDateRangePDF() {
+    const dateFrom = document.getElementById('exportDateFrom').value;
+    const dateTo = document.getElementById('exportDateTo').value;
+    
+    if (!dateFrom || !dateTo) {
+        alert('Укажите диапазон дат');
+        return;
+    }
+    
+    alert(`Выгрузка сессий с ${dateFrom} по ${dateTo}. Функция экспорта в PDF будет реализована в следующей версии.`);
+    
+    document.querySelector('.modal').remove();
+}
+
+function exportCurrentSessionPDF() {
+    if (chatMessages.length === 0) {
+        alert('Нет текущей сессии для выгрузки');
+        return;
+    }
+    
+    alert('Выгрузка текущей сессии в PDF. Функция будет реализована в следующей версии.');
+}
+
+function exportSessionPDF(session) {
+    alert(`Выгрузка сессии от ${formatDate(session.date)} в PDF. Функция будет реализована в следующей версии.`);
+}
+
+async function exportTrainerStatisticsPDF() {
+    alert('Выгрузка статистики тренера в PDF. Функция будет реализована в следующей версии.');
+}
+
+async function exportLatestSessionsPDF() {
+    alert('Выгрузка последних сессий в PDF. Функция будет реализована в следующей версии.');
+}
+
+async function exportAllStudentsPDF() {
+    alert('Выгрузка списка учеников в PDF. Функция будет реализована в следующей версии.');
+}
+
+async function exportStudentAllSessionsPDF(studentId, studentName) {
+    alert(`Выгрузка всех сессий ученика ${studentName} в PDF. Функция будет реализована в следующей версии.`);
+}
+
+async function exportStudentSessionPDF(studentId, sessionId) {
+    alert('Выгрузка сессии ученика в PDF. Функция будет реализована в следующей версии.');
+}
+
+async function exportSearchResultsPDF() {
+    alert('Выгрузка результатов поиска в PDF. Функция будет реализована в следующей версии.');
+}
+
+async function exportFilteredSessionsPDF() {
+    alert('Выгрузка отфильтрованных сессий в PDF. Функция будет реализована в следующей версии.');
 }

@@ -1,4 +1,3 @@
-// app.js - полный код с добавлением функций выгрузки PDF
 let feedbackShown = false;
 const SUPABASE_URL = 'https://lpoaqliycyuhvdrwuyxj.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_uxkhuA-ngwjNjfaZdHCs7Q_FXOQRrSD';
@@ -100,6 +99,7 @@ class SupabaseAuth {
                 group_name: group.trim(),
                 password_hash: passwordHash,
                 role: 'user',
+                avatar_url: '',
                 stats: JSON.stringify({
                     currentLevel: 1,
                     totalXP: 0,
@@ -178,6 +178,7 @@ class SupabaseAuth {
                 username: user.username,
                 group: user.group_name,
                 role: user.role || 'user',
+                avatar_url: user.avatar_url || '',
                 stats: userStats
             };
             
@@ -333,42 +334,39 @@ class SupabaseAuth {
         }
     }
     
-    async getLeaderboard(filterVertical = 'all') {
-        try {
-            const users = await this.supabaseRequest('users?select=id,username,group_name,stats');
+async getLeaderboard(filterVertical = 'all') {
+    try {
+
+        const users = await this.supabaseRequest('users');
+        
+        if (!users || users.length === 0) return [];
+        
+        const leaderboard = users.map(user => {
+            let stats = {};
+            try {
+                stats = typeof user.stats === 'string' ? JSON.parse(user.stats) : user.stats;
+            } catch { }
             
-            if (!users?.length) return [];
-            
-            const leaderboard = users
-                .filter(user => filterVertical === 'all' || user.group_name === filterVertical)
-                .map(user => {
-                    let userStats;
-                    try {
-                        userStats = typeof user.stats === 'string' ? 
-                            JSON.parse(user.stats) : 
-                            (user.stats || {});
-                    } catch {
-                        userStats = {};
-                    }
-                    
-                    return {
-                        id: user.id,
-                        username: user.username,
-                        group: user.group_name || 'Без вертикали',
-                        level: userStats.currentLevel || 1,
-                        sessions: userStats.completedSessions || 0,
-                        avgScore: userStats.averageScore || 0,
-                        xp: userStats.totalXP || 0
-                    };
-                })
-                .sort((a, b) => b.xp - a.xp);
-            
-            return leaderboard.slice(0, 100);
-        } catch (error) {
-            console.error('Ошибка получения рейтинга:', error);
-            return [];
-        }
+            return {
+                id: user.id,
+                username: user.username || 'Без имени',
+                group: user.group_name || 'Без вертикали',
+                level: stats.currentLevel || 1,
+                sessions: stats.completedSessions || 0,
+                avgScore: stats.averageScore || 0,
+                xp: stats.totalXP || 0,
+                avatar_url: user.avatar_url || ''
+            };
+        })
+        .filter(user => filterVertical === 'all' || user.group === filterVertical)
+        .sort((a, b) => b.xp - a.xp);
+        
+        return leaderboard.slice(0, 100);
+    } catch (error) {
+        console.error('Ошибка получения рейтинга:', error);
+        return [];
     }
+}
             
     async getSystemStats() {
         try {
@@ -464,10 +462,6 @@ class SupabaseAuth {
                 endpoint += `&vertical=eq.${encodeURIComponent(filters.vertical)}`;
             }
             
-            if (filters.limit) {
-                endpoint += `&limit=${filters.limit}`;
-            }
-            
             const sessions = await this.supabaseRequest(endpoint);
             return sessions || [];
         } catch (error) {
@@ -476,63 +470,63 @@ class SupabaseAuth {
         }
     }
     
-    async getTrainingSessionsWithPagination(page = 1, pageSize = 50, filters = {}) {
+    async updateAvatar(userId, avatarUrl) {
         try {
-            let endpoint = 'training_sessions?select=*&order=date.desc';
+            const response = await fetch('/api/supabase-proxy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    endpoint: `users?id=eq.${userId}`,
+                    method: 'PATCH',
+                    body: { avatar_url: avatarUrl },
+                    headers: { 'Prefer': 'return=representation' }
+                })
+            });
             
-            if (filters.vertical && filters.vertical !== 'all') {
-                endpoint += `&vertical=eq.${encodeURIComponent(filters.vertical)}`;
+            if (response.ok) {
+                if (this.currentUser && this.currentUser.id === userId) {
+                    this.currentUser.avatar_url = avatarUrl;
+                    localStorage.setItem('dialogue_currentUser', JSON.stringify(this.currentUser));
+                }
+                this.cache.clear();
+                return true;
             }
-            
-            const start = (page - 1) * pageSize;
-            const end = start + pageSize - 1;
-            endpoint += `&range=${start}-${end}`;
-            
-            const sessions = await this.supabaseRequest(endpoint);
-            return sessions || [];
+            return false;
         } catch (error) {
-            console.error('Ошибка получения тренировок с пагинацией:', error);
-            return [];
+            console.error('Ошибка обновления аватара:', error);
+            return false;
         }
     }
     
-    async getTrainingSessionsCount(filters = {}) {
+    async uploadAvatar(userId, file) {
         try {
-            let endpoint = 'training_sessions?select=id';
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('userId', userId);
             
-            if (filters.vertical && filters.vertical !== 'all') {
-                endpoint += `&vertical=eq.${encodeURIComponent(filters.vertical)}`;
+            const response = await fetch('/api/upload-avatar', {
+                method: 'POST',
+                body: formData
+            });
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Upload failed: ${errorText}`);
             }
             
-            const sessions = await this.supabaseRequest(endpoint);
-            return sessions?.length || 0;
+            const data = await response.json();
+            
+            if (data.url) {
+                const success = await this.updateAvatar(userId, data.url);
+                if (success) {
+                    return { success: true, url: data.url };
+                }
+            }
+            
+            return { success: false, message: 'Не удалось сохранить аватар' };
         } catch (error) {
-            console.error('Ошибка получения количества тренировок:', error);
-            return 0;
-        }
-    }
-    
-    async getCustomStatistics(filters) {
-        try {
-            let endpoint = 'training_sessions?select=*';
-            
-            if (filters.vertical && filters.vertical !== 'all') {
-                endpoint += `&vertical=eq.${encodeURIComponent(filters.vertical)}`;
-            }
-            
-            if (filters.dateFrom) {
-                endpoint += `&date=gte.${filters.dateFrom}`;
-            }
-            
-            if (filters.dateTo) {
-                endpoint += `&date=lte.${filters.dateTo}`;
-            }
-            
-            const sessions = await this.supabaseRequest(endpoint);
-            return sessions || [];
-        } catch (error) {
-            console.error('Ошибка получения статистики:', error);
-            return [];
+            console.error('Ошибка загрузки аватара:', error);
+            return { success: false, message: 'Ошибка загрузки файла' };
         }
     }
     
@@ -546,49 +540,76 @@ class SupabaseAuth {
     }
     
     showAuthModal() {
-        document.getElementById('authModal').style.display = 'flex';
-        document.getElementById('mainContainer').style.display = 'none';
+        const authModal = document.getElementById('authModal');
+        const mainContainer = document.getElementById('mainContainer');
+        
+        if (authModal) authModal.style.display = 'flex';
+        if (mainContainer) mainContainer.style.display = 'none';
+        
+        this.showLoginForm();
+    }
+    
+    showMainApp() {
+        const authModal = document.getElementById('authModal');
+        const mainContainer = document.getElementById('mainContainer');
+        
+        if (authModal) authModal.style.display = 'none';
+        if (mainContainer) mainContainer.style.display = 'flex';
+        
+        this.updateInterfaceBasedOnRole();
+    }
+    
+    showLoginForm() {
         document.getElementById('loginForm').style.display = 'block';
         document.getElementById('registerForm').style.display = 'none';
         document.getElementById('resetPasswordForm').style.display = 'none';
         document.getElementById('trainerLoginForm').style.display = 'none';
+        clearErrors();
     }
-    
-    showMainApp() {
-        document.getElementById('authModal').style.display = 'none';
-        document.getElementById('mainContainer').style.display = 'block';
-        this.updateInterfaceBasedOnRole();
-    }
-    
+
     updateInterfaceBasedOnRole() {
         if (!this.currentUser) return;
         
-        const headerTitle = document.querySelector('.header h1');
+        const headerTitle = document.getElementById('appTitle');
         const headerSubtitle = document.getElementById('headerSubtitle');
         
-        if (this.userRole === 'trainer') {
-            headerTitle.innerHTML = 'Панель тренера';
-            headerSubtitle.textContent = `Тренер: ${this.currentUser.username}`;
-        } else {
-            headerTitle.innerHTML = 'Диалоговый тренажер';
-            headerSubtitle.textContent = 'Тренировка работы с клиентами';
+        if (headerTitle && headerSubtitle) {
+            if (this.userRole === 'trainer') {
+                headerTitle.textContent = 'Панель тренера';
+                headerSubtitle.textContent = `Тренер: ${this.currentUser.username}`;
+            } else {
+                headerTitle.textContent = 'Диалоговый тренажер';
+                headerSubtitle.textContent = 'Тренировка работы с клиентами';
+            }
         }
         
-        document.getElementById('currentUserName').textContent = this.currentUser.username;
+        const currentUserName = document.getElementById('currentUserName');
+        if (currentUserName) {
+            currentUserName.textContent = this.currentUser.username;
+        }
+        
         const groupBadge = document.getElementById('userGroupBadge');
-        
-        if (this.userRole === 'trainer') {
-            groupBadge.textContent = 'Тренер';
-            groupBadge.style.backgroundColor = '#155d27';
-            groupBadge.style.color = 'white';
-        } else if (this.currentUser.group) {
-            groupBadge.textContent = this.currentUser.group;
-            groupBadge.style.backgroundColor = '#e3f2fd';
-            groupBadge.style.color = '#1976d2';
-        } else {
-            groupBadge.style.display = 'none';
+        if (groupBadge) {
+            if (this.userRole === 'trainer') {
+                groupBadge.textContent = 'Тренер';
+                groupBadge.style.background = 'linear-gradient(135deg, #155d27, #27ae60)';
+            } else if (this.currentUser.group) {
+                groupBadge.textContent = this.currentUser.group;
+                groupBadge.style.background = 'linear-gradient(135deg, var(--primary-color), var(--secondary-color))';
+            } else {
+                groupBadge.style.display = 'none';
+            }
+            groupBadge.style.display = 'inline-block';
         }
-        groupBadge.style.display = 'inline-block';
+        
+        const headerAvatar = document.getElementById('headerUserAvatar');
+        if (headerAvatar) {
+            if (this.currentUser.avatar_url) {
+                headerAvatar.innerHTML = `<img src="${this.currentUser.avatar_url}" alt="${this.currentUser.username}" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">`;
+            } else {
+                headerAvatar.innerHTML = '<i class="fas fa-user"></i>';
+            }
+        }
         
         loadInterfaceForRole();
     }
@@ -792,12 +813,6 @@ ${clientTypeInstruction}
             promptContent = `${clientTypeInstruction}\n\n${promptContent}`;
         }
         
-        console.log("=== ФИНАЛЬНЫЙ ПРОМПТ ДЛЯ ВСЕХ ВЕРТИКАЛЕЙ ===");
-        console.log("Тип клиента:", isRandomClient ? "Случайный" : selectedClientType);
-        console.log("Вертикаль:", auth.currentUser?.group);
-        console.log("Длина:", promptContent.length, "символов");
-        console.log("Первые 400 символов:", promptContent.substring(0, 400));
-        
         const systemMessage = {
             role: "system",
             content: promptContent
@@ -847,7 +862,7 @@ ${clientTypeInstruction}
         resetTrainingState();
     }
 }
-        
+
 document.addEventListener('DOMContentLoaded', async function() {
     const savedUser = localStorage.getItem('dialogue_currentUser');
     
@@ -889,12 +904,6 @@ function checkAndResetDailyLimit() {
             lastResetTime = now;
             
             auth.saveUserStats(stats);
-            
-            if (document.getElementById('dailyLimitNotification')) {
-                updateDailyLimitNotification();
-            }
-        } else {
-            dailySessionsUsed = stats.dailySessions || 0;
         }
     }
     
@@ -927,21 +936,25 @@ function updateDailyLimitNotification() {
 
 function loadInterfaceForRole() {
     const sidebar = document.getElementById('sidebar');
-    const mainContent = document.querySelector('.main-content');
+    const contentWrapper = document.getElementById('contentWrapper');
     
-    sidebar.innerHTML = '';
-    mainContent.innerHTML = '';
-    
-    if (auth.isTrainer()) {
-        loadTrainerInterface();
-    } else {
-        loadStudentInterface();
+    if (sidebar && contentWrapper) {
+        sidebar.innerHTML = '';
+        contentWrapper.innerHTML = '';
+        
+        if (auth.isTrainer()) {
+            loadTrainerInterface();
+        } else {
+            loadStudentInterface();
+        }
     }
 }
 
 function loadStudentInterface() {
     const sidebar = document.getElementById('sidebar');
-    const mainContent = document.querySelector('.main-content');
+    const contentWrapper = document.getElementById('contentWrapper');
+    
+    if (!sidebar || !contentWrapper) return;
     
     sidebar.innerHTML = `
         <a href="javascript:void(0);" onclick="switchTab('home')" class="nav-item active" data-tab="home">
@@ -956,15 +969,15 @@ function loadStudentInterface() {
         <a href="javascript:void(0);" onclick="switchTab('leaderboard')" class="nav-item" data-tab="leaderboard">
             <i class="fas fa-trophy"></i> Рейтинг
         </a>
-        <a href="javascript:void(0);" onclick="switchTab('achievements')" class="nav-item" data-tab="achievements">
-            <i class="fas fa-medal"></i> Достижения
+        <a href="javascript:void(0);" onclick="switchTab('profile')" class="nav-item" data-tab="profile">
+            <i class="fas fa-user-circle"></i> Профиль
         </a>
         <a href="javascript:void(0);" onclick="switchTab('history')" class="nav-item" data-tab="history">
             <i class="fas fa-history"></i> История
         </a>
     `;
     
-    mainContent.innerHTML = `
+    contentWrapper.innerHTML = `
         <div class="tab-content active" id="home-tab">
             <div class="welcome-section">
                 <div class="section-title">
@@ -972,48 +985,76 @@ function loadStudentInterface() {
                     <span>Добро пожаловать в диалоговый тренажер!</span>
                 </div>
                 
+                <div class="about-section">
+                    <div class="about-content">
+                        <h3 class="about-title">
+                            <i class="fas fa-robot"></i>
+                            О тренажере
+                        </h3>
+                        <p class="about-description">
+                            Этот тренажер выполняет функции клиента, открывая возможность отрабатывать возражения и сложные ситуации. 
+                            Искусственный интеллект играет роль клиента с различными типами поведения, как и клиент он не знает внутренних логик и процессы нашей компании.
+                        </p>
+                        <p class="about-description">
+                            <strong>Ваша задача:</strong> помочь виртуальному клиенту, отработать его возражения, объяснить что ему нужно делать, 
+                            и найти оптимальное решение в рамках своей компетенции.
+                        </p>
+                        <div class="about-features">
+                            <div class="about-feature">
+                                <h5><i class="fas fa-graduation-cap"></i> Обучение на практике</h5>
+                                <p>Тренируйтесь в безопасной среде без риска для реальных клиентов</p>
+                            </div>
+                            <div class="about-feature">
+                                <h5><i class="fas fa-users"></i> Разные типы клиентов</h5>
+                                <p>Отрабатывайте навыки с агрессивными, пассивными, требовательными и другими типами клиентов</p>
+                            </div>
+                            <div class="about-feature">
+                                <h5><i class="fas fa-chart-line"></i> Отслеживание прогресса</h5>
+                                <p>Получайте обратную связь и следите за своим профессиональным ростом</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
                 <div class="confidentiality-warning">
                     <h4><i class="fas fa-exclamation-triangle"></i> ВАЖНО: Конфиденциальность данных</h4>
                     <div class="confidentiality-list">
                         <div class="prohibited">
                             <strong>ЗАПРЕЩЕНО указывать:</strong>
-                            <ul style="margin: 5px 0 0 15px; padding: 0; font-size: 10px;">
+                            <ul>
                                 <li>Конфиденциальную информацию компании</li>
                                 <li>Персональные данные клиентов</li>
                                 <li>Банковские/паспортные данные</li>
+                                <li>Внутренние логики и процессы</li>
+                                <li>Коммерческие тайны</li>
                             </ul>
                         </div>
                         <div class="recommended">
                             <strong>РЕКОМЕНДАЦИИ:</strong>
-                            <ul style="margin: 5px 0 0 15px; padding: 0; font-size: 10px;">
+                            <ul>
                                 <li>Используйте вымышленные данные</li>
                                 <li>Не указывайте реальные имена</li>
                                 <li>Сохраняйте конфиденциальность</li>
+                                <li>Используйте общие формулировки</li>
+                                <li>Обращайтесь к руководителю при сомнениях</li>
                             </ul>
                         </div>
                     </div>
                 </div>
                 
-                <div class="news-section" id="newsSection">
+                <div class="news-section">
                     <div class="news-title">
                         <i class="fas fa-newspaper"></i>
                         <span>Новости тренажера</span>
                     </div>
-                    <div class="news-grid" id="newsGrid"></div>
-                </div>
-                
-                <div class="vertical-info">
-                    <h3><i class="fas fa-info-circle"></i> Ваша вертикаль: <span id="userVerticalDisplay">${auth.currentUser.group || 'Не указана'}</span></h3>
-                    <p>Вы будете тренироваться только на сценариях своей вертикали.</p>
-                    <div>
-                        <span class="client-type-badge">😠 Агрессивный</span>
-                        <span class="client-type-badge">😔 Пассивный</span>
-                        <span class="client-type-badge">🧐 Требовательный</span>
-                        <span class="client-type-badge">🤔 Нерешительный</span>
-                        <span class="client-type-badge">😄 Славный малый</span>
-                    </div>
-                    <div class="storage-info" style="margin-top: 10px;">
-                        <i class="fas fa-database"></i> История чатов хранится 30 дней
+                    <div class="news-container">
+                        <div class="news-scroll-container" id="newsScrollContainer">
+                            <div class="news-grid" id="newsGrid"></div>
+                        </div>
+                        <div class="scroll-indicator">
+                            <i class="fas fa-chevron-left scroll-arrow left" onclick="scrollNews(-1)"></i>
+                            <i class="fas fa-chevron-right scroll-arrow right" onclick="scrollNews(1)"></i>
+                        </div>
                     </div>
                 </div>
                 
@@ -1060,7 +1101,7 @@ function loadStudentInterface() {
             </div>
             
             <div class="training-container">
-                <div class="scenario-section">
+                <div class="scenario-section" id="scenarioSection">
                     <div class="vertical-info">
                         <h3><i class="fas fa-building"></i> Ваша вертикаль: <span id="currentVerticalName">${auth.currentUser.group || 'Не указана'}</span>
                             <span id="dailyLimitBadge" class="limit-badge">${dailySessionsUsed}/${dailyLimit}</span>
@@ -1101,15 +1142,18 @@ function loadStudentInterface() {
                             <button class="btn btn-primary" id="startTrainingBtn" onclick="startTraining()" disabled>
                                 Начать тренировку
                             </button>
-                            <button class="btn btn-secondary" id="endTrainingBtn" onclick="finishChat()">
-                                Завершить тренировку
+                            <button class="btn btn-secondary" id="endTrainingBtn" onclick="finishChat()" style="display: none;">
+                                Завершить диалог
+                            </button>
+                            <button class="btn btn-danger" id="finishTrainingBtn" onclick="finishChat()" style="display: none;">
+                                <i class="fas fa-flag-checkered"></i> Завершить диалог
                             </button>
                             <div class="training-timer" id="trainingTimer"></div>
                         </div>
                     </div>
                 </div>
 
-                <div class="chat-section">
+                <div class="chat-section" id="chatSection">
                     <div class="chat-header">
                         <div class="chat-title">💬 Тренировочный чат</div>
                         <div class="chat-status" id="chatStatus">Ожидание начала</div>
@@ -1134,6 +1178,12 @@ function loadStudentInterface() {
                             <button class="send-btn" id="sendBtn" onclick="sendMessage()" disabled>
                                 Отправить
                             </button>
+                        </div>
+                        <div class="chat-controls" id="chatControls" style="display: none; margin-top: 10px; text-align: center;">
+                            <button class="btn btn-danger btn-sm" onclick="finishChat()">
+                                <i class="fas fa-flag-checkered"></i> Завершить диалог
+                            </button>
+                            <span style="margin-left: 10px; font-size: 12px; color: #666;">или отправьте [[ДИАЛОГ ЗАВЕРШЕН]]</span>
                         </div>
                     </div>
                 </div>
@@ -1218,15 +1268,91 @@ function loadStudentInterface() {
             </div>
         </div>
 
-        <div class="tab-content" id="achievements-tab">
-            <div class="badges-section">
-                <div class="section-title">
-                    <span>🏆 Все достижения</span>
+        <div class="tab-content" id="profile-tab">
+            <div class="welcome-section">
+                <div class="profile-header">
+                    <div class="profile-avatar-container">
+                        <div class="profile-avatar" id="profileAvatar">
+                            ${auth.currentUser.avatar_url ? `<img src="${auth.currentUser.avatar_url}" alt="${auth.currentUser.username}">` : '<i class="fas fa-user"></i>'}
+                        </div>
+                        <button class="btn btn-sm btn-secondary" onclick="openAvatarModal()" style="margin-top: 10px;">
+                            <i class="fas fa-camera"></i> Сменить аватар
+                        </button>
+                    </div>
+                    <div class="profile-info">
+                        <div class="profile-name" id="profileUserName">${auth.currentUser.username}</div>
+                        <div class="profile-group">
+                            <span>Вертикаль:</span>
+                            <span class="profile-group-badge" id="profileUserGroup">${auth.currentUser.group || 'Не указана'}</span>
+                        </div>
+                        <div class="profile-stats">
+                            <div class="limit-badge">Уровень: ${auth.currentUser.stats.currentLevel || 1}</div>
+                            <div class="limit-badge">Тренировок: ${auth.currentUser.stats.completedSessions || 0}</div>
+                            <div class="limit-badge">XP: ${auth.currentUser.stats.totalXP || 0}</div>
+                        </div>
+                    </div>
                 </div>
-                <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
-                    Зарабатывайте бейджи, совершенствуя навыки работы с клиентами.
-                </p>
-                <div class="badges-grid" id="allBadgesGrid"></div>
+
+                <div class="profile-settings">
+                    <div class="settings-section">
+                        <h3 class="settings-title">
+                            <i class="fas fa-medal"></i>
+                            Последние достижения
+                        </h3>
+                        <div class="recent-achievements" id="recentAchievements">
+                            <div class="loading-achievements">Загрузка достижений...</div>
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <h3 class="settings-title">
+                            <i class="fas fa-chart-line"></i>
+                            Прогресс обучения
+                        </h3>
+                        <div class="progress-panel">
+                            <div class="level-info">
+                                <div class="level-badge">Уровень ${auth.currentUser.stats.currentLevel || 1}</div>
+                                <div class="level-name">${levels.find(l => l.level === auth.currentUser.stats.currentLevel)?.name || 'Новичок'}</div>
+                            </div>
+                            
+                            <div class="xp-bar">
+                                <div class="xp-fill" style="width: ${calculateXPProgress()}%"></div>
+                                <div class="xp-text">${auth.currentUser.stats.totalXP || 0}/${getNextLevelXP()} XP</div>
+                            </div>
+                            
+                            <div class="stats-grid">
+                                <div class="stat-item">
+                                    <span class="stat-icon">🎯</span>
+                                    <span class="stat-value">${auth.currentUser.stats.completedSessions || 0}</span>
+                                    <span class="stat-label">тренировок</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-icon">⭐</span>
+                                    <span class="stat-value">${(auth.currentUser.stats.averageScore || 0).toFixed(1)}</span>
+                                    <span class="stat-label">средний балл</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-icon">🔥</span>
+                                    <span class="stat-value">${auth.currentUser.stats.currentStreak || 0}</span>
+                                    <span class="stat-label">дней подряд</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-icon">🏆</span>
+                                    <span class="stat-value">${auth.currentUser.stats.achievementsUnlocked?.length || 0}</span>
+                                    <span class="stat-label">достижений</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="settings-section">
+                        <h3 class="settings-title">
+                            <i class="fas fa-history"></i>
+                            История тренировок
+                        </h3>
+                        <div style="margin-top: 15px;" id="profileHistoryList"></div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -1236,27 +1362,6 @@ function loadStudentInterface() {
                     <span>📜 История тренировок</span>
                     <div class="storage-info" style="margin-left: 10px; display: inline-block;">
                         <i class="fas fa-info-circle"></i> История хранится 30 дней
-                    </div>
-                </div>
-                
-                <div class="pdf-export-section">
-                    <div class="section-title">
-                        <i class="fas fa-file-pdf"></i>
-                        <span>Выгрузка диалогов в PDF</span>
-                    </div>
-                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
-                        Вы можете сохранить любой диалог в формате PDF для дальнейшего анализа или отчета.
-                    </p>
-                    <div class="pdf-export-options">
-                        <button class="btn btn-primary" onclick="exportAllSessionsPDF()">
-                            <i class="fas fa-download"></i> Выгрузить все диалоги
-                        </button>
-                        <button class="btn btn-secondary" onclick="showDateRangePDFExport()">
-                            <i class="fas fa-calendar"></i> По датам
-                        </button>
-                        <button class="btn btn-secondary" onclick="exportCurrentSessionPDF()">
-                            <i class="fas fa-file-export"></i> Текущую сессию
-                        </button>
                     </div>
                 </div>
                 
@@ -1271,9 +1376,168 @@ function loadStudentInterface() {
     loadStats();
     loadSystemStats();
     setupLeaderboardTabs();
-    renderAllAchievements();
+    renderRecentAchievements();
     renderHistory();
+    renderProfileHistory();
     renderDynamicNews();
+}
+
+function renderRecentAchievements() {
+    const recentAchievements = document.getElementById('recentAchievements');
+    if (!recentAchievements) return;
+    
+    if (!auth.currentUser) {
+        recentAchievements.innerHTML = '<div class="no-achievements">Нет данных</div>';
+        return;
+    }
+    
+    const userAchievements = auth.currentUser.stats.achievementsUnlocked || [];
+    
+    if (userAchievements.length === 0) {
+        recentAchievements.innerHTML = `
+            <div class="no-achievements">
+                <div class="no-achievements-icon">🏆</div>
+                <div class="no-achievements-text">У вас пока нет достижений</div>
+                <div class="no-achievements-subtext">Начните тренировки, чтобы заработать достижения!</div>
+            </div>
+        `;
+        return;
+    }
+    
+    let recentAchievementIds = [...userAchievements].reverse().slice(0, 3);
+    
+    recentAchievements.innerHTML = '<div class="recent-achievements-grid"></div>';
+    const grid = recentAchievements.querySelector('.recent-achievements-grid');
+    
+    recentAchievementIds.forEach(achievementId => {
+        const achievement = achievements.find(a => a.id === achievementId);
+        if (achievement) {
+            const badge = document.createElement('div');
+            badge.className = 'recent-badge';
+            badge.innerHTML = `
+                <div class="recent-badge-icon">${achievement.icon}</div>
+                <div class="recent-badge-info">
+                    <div class="recent-badge-name">${achievement.name}</div>
+                    <div class="recent-badge-desc">${achievement.description}</div>
+                </div>
+            `;
+            badge.title = achievement.description;
+            grid.appendChild(badge);
+        }
+    });
+    
+    const style = document.createElement('style');
+    style.textContent = `
+        .recent-achievements {
+            padding: 15px;
+            background: var(--bg-surface);
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--border-color);
+        }
+        
+        .no-achievements {
+            text-align: center;
+            padding: 30px 20px;
+            color: var(--text-secondary);
+        }
+        
+        .no-achievements-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+            opacity: 0.3;
+        }
+        
+        .no-achievements-text {
+            font-size: 16px;
+            font-weight: 500;
+            margin-bottom: 8px;
+            color: var(--text-primary);
+        }
+        
+        .no-achievements-subtext {
+            font-size: 13px;
+            color: var(--text-light);
+        }
+        
+        .recent-achievements-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        
+        .recent-badge {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 15px;
+            background: var(--bg-card);
+            border-radius: var(--radius-md);
+            border: 2px solid var(--border-color);
+            transition: all var(--transition-fast);
+        }
+        
+        .recent-badge:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+            border-color: var(--primary-color);
+        }
+        
+        .recent-badge-icon {
+            font-size: 24px;
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            border-radius: var(--radius-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            flex-shrink: 0;
+        }
+        
+        .recent-badge-info {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .recent-badge-name {
+            font-weight: 600;
+            font-size: 14px;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .recent-badge-desc {
+            font-size: 12px;
+            color: var(--text-secondary);
+            line-height: 1.4;
+        }
+    `;
+    document.head.appendChild(style);
+}
+
+function calculateXPProgress() {
+    if (!auth.currentUser) return 0;
+    const userStats = auth.currentUser.stats;
+    const currentLevel = levels.find(l => l.level === userStats.currentLevel) || levels[0];
+    const nextLevel = levels.find(l => l.level === userStats.currentLevel + 1);
+    
+    const currentLevelXP = currentLevel.requiredXP;
+    const nextLevelXP = nextLevel ? nextLevel.requiredXP : currentLevelXP + 100;
+    const xpProgress = userStats.totalXP - currentLevelXP;
+    const xpNeeded = nextLevelXP - currentLevelXP;
+    
+    return Math.min(100, (xpProgress / xpNeeded) * 100);
+}
+
+function getNextLevelXP() {
+    if (!auth.currentUser) return 100;
+    const userStats = auth.currentUser.stats;
+    const nextLevel = levels.find(l => l.level === userStats.currentLevel + 1);
+    return nextLevel ? nextLevel.requiredXP : (levels.find(l => l.level === userStats.currentLevel)?.requiredXP || 0) + 100;
 }
 
 function selectClientType(type, isRandom = false) {
@@ -1292,15 +1556,21 @@ function selectClientType(type, isRandom = false) {
         isRandomClient = true;
     }
     
-    document.getElementById('startTrainingBtn').disabled = false;
+    const startBtn = document.getElementById('startTrainingBtn');
+    if (startBtn) startBtn.disabled = false;
     
-    if (isRandomClient) {
-        document.getElementById('scenarioTitle').textContent = 'Случайный клиент';
-        document.getElementById('scenarioDescription').textContent = 'Выбран случайный тип клиента. Диалог начнется с сообщения от клиента.';
-    } else {
-        const clientType = clientTypes[type];
-        document.getElementById('scenarioTitle').textContent = clientType.name;
-        document.getElementById('scenarioDescription').textContent = clientType.description;
+    const scenarioTitle = document.getElementById('scenarioTitle');
+    const scenarioDesc = document.getElementById('scenarioDescription');
+    
+    if (scenarioTitle && scenarioDesc) {
+        if (isRandomClient) {
+            scenarioTitle.textContent = 'Случайный клиент';
+            scenarioDesc.textContent = 'Выбран случайный тип клиента. Диалог начнется с сообщения от клиента.';
+        } else {
+            const clientType = clientTypes[type];
+            scenarioTitle.textContent = clientType.name;
+            scenarioDesc.textContent = clientType.description;
+        }
     }
 }
 
@@ -1338,29 +1608,75 @@ async function startTraining() {
         return;
     }
     
+    const scenarioSection = document.getElementById('scenarioSection');
+    const chatSection = document.getElementById('chatSection');
+    
+    if (scenarioSection && chatSection) {
+        scenarioSection.style.opacity = '0';
+        scenarioSection.style.transform = 'translateX(-20px)';
+        scenarioSection.style.transition = 'all 0.5s ease';
+        
+        setTimeout(() => {
+            scenarioSection.style.display = 'none';
+            
+            chatSection.style.gridColumn = '1 / -1';
+            chatSection.style.transition = 'all 0.5s ease';
+            chatSection.style.width = '100%';
+            
+            chatSection.classList.add('chat-expanded');
+            
+            const chatTitle = document.querySelector('.chat-title');
+            if (chatTitle) {
+                const clientType = clientTypes[selectedClientType];
+                chatTitle.textContent = `💬 Диалог с ${isRandomClient ? 'случайным клиентом' : clientType.name.toLowerCase()}`;
+            }
+            
+            const endBtn = document.getElementById('endTrainingBtn');
+            if (endBtn) endBtn.style.display = 'block';
+            
+            const finishBtn = document.getElementById('finishTrainingBtn');
+            if (finishBtn) finishBtn.style.display = 'block';
+            
+            setTimeout(() => {
+                startTrainingProcess();
+            }, 300);
+        }, 500);
+    } else {
+        startTrainingProcess();
+    }
+}
+
+async function startTrainingProcess() {
     trainingInProgress = true;
     trainingStartTime = new Date();
     chatMessages = [];
     lastAIFeedback = "";
     
-    document.getElementById('startTrainingBtn').style.display = 'none';
-    document.getElementById('chatInput').disabled = false;
-    document.getElementById('sendBtn').disabled = false;
-    document.getElementById('chatStatus').textContent = 'Тренировка активна';
-    document.getElementById('chatStatus').className = 'chat-status training-active';
+    const startBtn = document.getElementById('startTrainingBtn');
+    const chatInput = document.getElementById('chatInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const chatStatus = document.getElementById('chatStatus');
+    const chatControls = document.getElementById('chatControls');
     
-    document.querySelectorAll('.client-type-option').forEach(opt => opt.style.pointerEvents = 'none');
+    if (startBtn) startBtn.style.display = 'none';
+    if (chatInput) chatInput.disabled = false;
+    if (sendBtn) sendBtn.disabled = false;
+    if (chatStatus) {
+        chatStatus.textContent = 'Тренировка активна';
+        chatStatus.className = 'chat-status training-active';
+    }
+    if (chatControls) chatControls.style.display = 'block';
     
     const chatMessagesDiv = document.getElementById('chatMessages');
-    chatMessagesDiv.innerHTML = '';
+    if (chatMessagesDiv) chatMessagesDiv.innerHTML = '';
     
     await sendPromptToAI();
     
     startTrainingTimer();
     
     setTimeout(() => {
-        document.getElementById('chatInput').focus();
-        chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight;
+        if (chatInput) chatInput.focus();
+        if (chatMessagesDiv) chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight;
     }, 100);
 }
 
@@ -1371,11 +1687,33 @@ function startTrainingTimer() {
         const elapsed = Math.floor((now - trainingStartTime) / 1000);
         const minutes = Math.floor(elapsed / 60);
         const seconds = elapsed % 60;
-        document.getElementById('trainingTimer').textContent = `Время: ${minutes}:${seconds.toString().padStart(2, '0')}`;
+        const timer = document.getElementById('trainingTimer');
+        if (timer) timer.textContent = `Время: ${minutes}:${seconds.toString().padStart(2, '0')}`;
         
         if (elapsed >= 900) {
             endTraining();
         }
+    }, 1000);
+}
+
+function finishChat() {
+    if (!trainingInProgress) return;
+    
+    addMessage('user', "[[ДИАЛОГ ЗАВЕРШЕН]]");
+    
+    const chatInput = document.getElementById('chatInput');
+    if (chatInput) chatInput.disabled = true;
+    
+    const sendBtn = document.getElementById('sendBtn');
+    if (sendBtn) sendBtn.disabled = true;
+    
+    const chatControls = document.getElementById('chatControls');
+    if (chatControls) chatControls.style.display = 'none';
+    
+    addMessage('ai', "Подготовка результатов чата...");
+    
+    setTimeout(() => {
+        sendPromptToAI();
     }, 1000);
 }
 
@@ -1437,22 +1775,60 @@ function resetTrainingState() {
     isRandomClient = false;
     clearInterval(trainingTimerInterval);
     
-    document.getElementById('startTrainingBtn').style.display = 'flex';
-    document.getElementById('endTrainingBtn').style.display = 'none';
-    document.getElementById('startTrainingBtn').disabled = true;
-    document.getElementById('trainingTimer').textContent = '';
-    document.getElementById('chatInput').disabled = true;
-    document.getElementById('sendBtn').disabled = true;
-    document.getElementById('chatStatus').textContent = 'Ожидание начала';
-    document.getElementById('chatStatus').className = 'chat-status';
+    const startBtn = document.getElementById('startTrainingBtn');
+    const endBtn = document.getElementById('endTrainingBtn');
+    const finishBtn = document.getElementById('finishTrainingBtn');
+    const chatInput = document.getElementById('chatInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const trainingTimer = document.getElementById('trainingTimer');
+    const chatStatus = document.getElementById('chatStatus');
+    const chatControls = document.getElementById('chatControls');
+    
+    if (startBtn) {
+        startBtn.style.display = 'flex';
+        startBtn.disabled = true;
+    }
+    if (endBtn) endBtn.style.display = 'none';
+    if (finishBtn) finishBtn.style.display = 'none';
+    if (trainingTimer) trainingTimer.textContent = '';
+    if (chatInput) chatInput.disabled = true;
+    if (sendBtn) sendBtn.disabled = true;
+    if (chatStatus) {
+        chatStatus.textContent = 'Ожидание начала';
+        chatStatus.className = 'chat-status';
+    }
+    if (chatControls) chatControls.style.display = 'none';
     
     document.querySelectorAll('.client-type-option').forEach(opt => {
         opt.classList.remove('selected');
         opt.style.pointerEvents = 'auto';
     });
     
-    document.getElementById('scenarioTitle').textContent = 'Выберите тип клиента';
-    document.getElementById('scenarioDescription').textContent = 'Выберите тип клиента из списка выше, чтобы начать тренировку. Тренировка длится до 15 минут.';
+    const scenarioTitle = document.getElementById('scenarioTitle');
+    const scenarioDesc = document.getElementById('scenarioDescription');
+    
+    if (scenarioTitle) scenarioTitle.textContent = 'Выберите тип клиента';
+    if (scenarioDesc) scenarioDesc.textContent = 'Выберите тип клиента из списка выше, чтобы начать тренировку. Тренировка длится до 15 минут.';
+    
+    const scenarioSection = document.getElementById('scenarioSection');
+    const chatSection = document.getElementById('chatSection');
+    
+    if (scenarioSection && chatSection) {
+        chatSection.style.gridColumn = '';
+        chatSection.style.width = '';
+        chatSection.classList.remove('chat-expanded');
+        
+        scenarioSection.style.display = 'block';
+        setTimeout(() => {
+            scenarioSection.style.opacity = '1';
+            scenarioSection.style.transform = 'translateX(0)';
+        }, 10);
+        
+        const chatTitle = document.querySelector('.chat-title');
+        if (chatTitle) {
+            chatTitle.textContent = '💬 Тренировочный чат';
+        }
+    }
 }
 
 function handleChatInput(event) {
@@ -1464,14 +1840,21 @@ function handleChatInput(event) {
 
 function sendMessage() {
     const input = document.getElementById('chatInput');
-    const message = input.value.trim();
+    const message = input ? input.value.trim() : '';
     
     if (!message || !trainingInProgress) return;
     
+    if (message === '[[ДИАЛОГ ЗАВЕРШЕН]]') {
+        finishChat();
+        return;
+    }
+    
     addMessage('user', message);
     
-    input.value = '';
-    input.style.height = 'auto';
+    if (input) {
+        input.value = '';
+        input.style.height = 'auto';
+    }
     
     sendPromptToAI().catch(error => {
         console.error('Ошибка при отправке сообщения:', error);
@@ -1699,15 +2082,17 @@ async function awardXP(score, scenario, clientType, evaluation, duration, aiFeed
     updateProgressUI();
     updateLeaderboard('all');
     renderHistory();
+    renderProfileHistory();
     renderProgressChart();
     loadSystemStats();
+    renderRecentAchievements();
     
     return {
         xp: xpEarned,
         session: sessionData
     };
 }
-    
+        
 function checkForEvaluationInResponse(response) {
     const lowerResponse = response.toLowerCase();
     
@@ -1907,7 +2292,7 @@ function checkAchievements(score, clientType, duration) {
     
     if (newAchievements.length > 0) {
         auth.saveUserStats(userStats);
-        renderAllAchievements();
+        renderRecentAchievements();
     }
 }
 
@@ -1951,10 +2336,19 @@ async function renderDynamicNews() {
     }
 }
 
+function scrollNews(direction) {
+    const container = document.getElementById('newsScrollContainer');
+    if (!container) return;
+    
+    const scrollAmount = 300;
+    container.scrollLeft += direction * scrollAmount;
+}
+
 function showFeedbackModal() {
     if (!feedbackShown && auth.currentUser && auth.userRole === 'user') {
         setTimeout(() => {
-            document.getElementById('feedbackModal').style.display = 'flex';
+            const feedbackModal = document.getElementById('feedbackModal');
+            if (feedbackModal) feedbackModal.style.display = 'flex';
             feedbackShown = true;
         }, 1000);
     }
@@ -1966,7 +2360,8 @@ function openFeedbackForm() {
 }
 
 function closeFeedbackModal() {
-    document.getElementById('feedbackModal').style.display = 'none';
+    const feedbackModal = document.getElementById('feedbackModal');
+    if (feedbackModal) feedbackModal.style.display = 'none';
 }
 
 function showRegisterForm() {
@@ -2198,8 +2593,11 @@ function switchTab(tabName) {
     document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
     
-    document.querySelector(`.nav-item[data-tab="${tabName}"]`).classList.add('active');
-    document.getElementById(`${tabName}-tab`).classList.add('active');
+    const navItem = document.querySelector(`.nav-item[data-tab="${tabName}"]`);
+    const tabContent = document.getElementById(`${tabName}-tab`);
+    
+    if (navItem) navItem.classList.add('active');
+    if (tabContent) tabContent.classList.add('active');
     
     if (auth.isTrainer()) {
         switch(tabName) {
@@ -2232,6 +2630,10 @@ function switchTab(tabName) {
             case 'leaderboard':
                 updateLeaderboard('all');
                 break;
+            case 'profile':
+                renderRecentAchievements();
+                renderProfileHistory();
+                break;
             case 'history':
                 renderHistory();
                 break;
@@ -2251,10 +2653,15 @@ async function loadSystemStats() {
     try {
         const stats = await auth.getSystemStats();
         
-        document.getElementById('totalUsers').textContent = stats.totalUsers || 0;
-        document.getElementById('totalSessions').textContent = stats.totalSessions || 0;
-        document.getElementById('avgSystemScore').textContent = (stats.avgScore || 0).toFixed(1);
-        document.getElementById('activeToday').textContent = stats.activeToday || 0;
+        const totalUsers = document.getElementById('totalUsers');
+        const totalSessions = document.getElementById('totalSessions');
+        const avgSystemScore = document.getElementById('avgSystemScore');
+        const activeToday = document.getElementById('activeToday');
+        
+        if (totalUsers) totalUsers.textContent = stats.totalUsers || 0;
+        if (totalSessions) totalSessions.textContent = stats.totalSessions || 0;
+        if (avgSystemScore) avgSystemScore.textContent = (stats.avgScore || 0).toFixed(1);
+        if (activeToday) activeToday.textContent = stats.activeToday || 0;
     } catch (error) {
         console.error('Ошибка загрузки статистики системы:', error);
     }
@@ -2267,8 +2674,16 @@ async function updateProgressUI() {
     const currentLevel = levels.find(l => l.level === userStats.currentLevel) || levels[0];
     const nextLevel = levels.find(l => l.level === userStats.currentLevel + 1);
     
-    document.getElementById('currentLevelBadge').textContent = `Уровень ${userStats.currentLevel}`;
-    document.getElementById('currentLevelName').textContent = currentLevel.name;
+    const levelBadge = document.getElementById('currentLevelBadge');
+    const levelName = document.getElementById('currentLevelName');
+    const xpFill = document.getElementById('xpFill');
+    const xpText = document.getElementById('xpText');
+    const sessionsCount = document.getElementById('sessionsCount');
+    const avgScore = document.getElementById('avgScore');
+    const streakCount = document.getElementById('streakCount');
+    
+    if (levelBadge) levelBadge.textContent = `Уровень ${userStats.currentLevel}`;
+    if (levelName) levelName.textContent = currentLevel.name;
     
     const currentLevelXP = currentLevel.requiredXP;
     const nextLevelXP = nextLevel ? nextLevel.requiredXP : currentLevelXP + 100;
@@ -2276,12 +2691,11 @@ async function updateProgressUI() {
     const xpNeeded = nextLevelXP - currentLevelXP;
     const percentage = Math.min(100, (xpProgress / xpNeeded) * 100);
     
-    document.getElementById('xpFill').style.width = `${percentage}%`;
-    document.getElementById('xpText').textContent = `${userStats.totalXP}/${nextLevelXP} XP`;
-    
-    document.getElementById('sessionsCount').textContent = userStats.completedSessions;
-    document.getElementById('avgScore').textContent = userStats.averageScore.toFixed(1);
-    document.getElementById('streakCount').textContent = userStats.currentStreak;
+    if (xpFill) xpFill.style.width = `${percentage}%`;
+    if (xpText) xpText.textContent = `${userStats.totalXP}/${nextLevelXP} XP`;
+    if (sessionsCount) sessionsCount.textContent = userStats.completedSessions;
+    if (avgScore) avgScore.textContent = userStats.averageScore.toFixed(1);
+    if (streakCount) streakCount.textContent = userStats.currentStreak;
     
     checkLevelUp();
 }
@@ -2292,48 +2706,13 @@ async function updateRankPosition() {
     try {
         const verticalLeaderboard = await auth.getLeaderboard(auth.currentUser.group);
         const verticalRank = verticalLeaderboard.findIndex(p => p.id === auth.currentUser.id) + 1;
-        document.getElementById('rankPosition').textContent = verticalRank > 0 ? verticalRank : '-';
+        const rankPosition = document.getElementById('rankPosition');
+        if (rankPosition) rankPosition.textContent = verticalRank > 0 ? verticalRank : '-';
     } catch (error) {
         console.error('Ошибка обновления позиции в рейтинге:', error);
-        document.getElementById('rankPosition').textContent = '-';
+        const rankPosition = document.getElementById('rankPosition');
+        if (rankPosition) rankPosition.textContent = '-';
     }
-}
-
-function renderAllAchievements() {
-    if (!auth.currentUser) return;
-    
-    const badgesGrid = document.getElementById('allBadgesGrid');
-    if (!badgesGrid) return;
-    
-    badgesGrid.innerHTML = '';
-    
-    const categories = {};
-    achievements.forEach(achievement => {
-        if (!categories[achievement.category]) {
-            categories[achievement.category] = [];
-        }
-        categories[achievement.category].push(achievement);
-    });
-    
-    Object.keys(categories).forEach(category => {
-        const categoryHeader = document.createElement('div');
-        categoryHeader.style.cssText = 'grid-column: 1/-1; font-weight: 600; margin-top: 15px; color: #333; font-size: 14px;';
-        categoryHeader.textContent = category.charAt(0).toUpperCase() + category.slice(1);
-        badgesGrid.appendChild(categoryHeader);
-        
-        categories[category].forEach(achievement => {
-            const isUnlocked = auth.currentUser.stats.achievementsUnlocked.includes(achievement.id);
-            const badge = document.createElement('div');
-            badge.className = `badge ${isUnlocked ? 'earned' : 'locked'}`;
-            badge.innerHTML = `
-                <span class="badge-icon">${achievement.icon}</span>
-                <span class="badge-name">${achievement.name}</span>
-                <span class="badge-desc">${achievement.description}</span>
-            `;
-            badge.title = achievement.description;
-            badgesGrid.appendChild(badge);
-        });
-    });
 }
 
 function renderProgressChart() {
@@ -2342,7 +2721,10 @@ function renderProgressChart() {
     const history = auth.currentUser.stats.trainingHistory;
     if (history.length === 0) return;
     
-    const ctx = document.getElementById('progressChart').getContext('2d');
+    const ctx = document.getElementById('progressChart');
+    if (!ctx) return;
+    
+    const chartCtx = ctx.getContext('2d');
     
     const typeStats = {};
     Object.keys(clientTypes).forEach(type => {
@@ -2369,7 +2751,7 @@ function renderProgressChart() {
         progressChart.destroy();
     }
     
-    progressChart = new Chart(ctx, {
+    progressChart = new Chart(chartCtx, {
         type: 'bar',
         data: {
             labels: labels,
@@ -2474,13 +2856,34 @@ async function updateLeaderboard(filter = 'all') {
             }
             
             let rankClass = '';
-            if (index === 0) rankClass = 'rank-1';
-            else if (index === 1) rankClass = 'rank-2';
-            else if (index === 2) rankClass = 'rank-3';
+            let trophy = '';
+            if (index === 0) {
+                rankClass = 'rank-1';
+                trophy = '🥇';
+            } else if (index === 1) {
+                rankClass = 'rank-2';
+                trophy = '🥈';
+            } else if (index === 2) {
+                rankClass = 'rank-3';
+                trophy = '🥉';
+            }
+            
+            const avatar = player.avatar_url ? 
+                `<img src="${player.avatar_url}" alt="${player.username}" class="leaderboard-avatar">` : 
+                '<i class="fas fa-user"></i>';
             
             row.innerHTML = `
-                <td class="rank ${rankClass}">${index + 1}</td>
-                <td class="player-name">${player.username} ${player.id === auth.currentUser?.id ? '(Вы)' : ''}</td>
+                <td class="rank ${rankClass}">
+                    ${trophy ? `<span class="trophy">${trophy}</span>` : index + 1}
+                </td>
+                <td class="player-name">
+                    <div class="leaderboard-player">
+                        <div class="leaderboard-avatar-container">
+                            ${avatar}
+                        </div>
+                        <span>${player.username} ${player.id === auth.currentUser?.id ? '(Вы)' : ''}</span>
+                    </div>
+                </td>
                 <td>${player.group || '-'}</td>
                 <td>${player.level}</td>
                 <td>${player.sessions}</td>
@@ -2590,14 +2993,9 @@ async function renderHistory() {
                         ${hasTrainerComments ? '<span style="margin-left: 10px; color: #ffc107;"><i class="fas fa-comment"></i> Есть комментарий тренера</span>' : ''}
                         ${hasAIFeedback ? '<span style="margin-left: 10px; color: #667eea;"><i class="fas fa-robot"></i> Есть обратная связь от AI</span>' : ''}
                     </div>
-                    <div class="history-actions">
-                        <button class="view-chat-btn" onclick="event.stopPropagation(); viewChatHistory(${JSON.stringify(item).replace(/"/g, '&quot;')})">
-                            <i class="fas fa-comments"></i> Просмотреть чат
-                        </button>
-                        <button class="pdf-export-btn" onclick="event.stopPropagation(); exportSessionPDF(${JSON.stringify(item).replace(/"/g, '&quot;')})">
-                            <i class="fas fa-file-pdf"></i> PDF
-                        </button>
-                    </div>
+                    <button class="view-chat-btn" onclick="event.stopPropagation(); viewChatHistory(${JSON.stringify(item).replace(/"/g, '&quot;')})">
+                        <i class="fas fa-comments"></i> Просмотреть чат
+                    </button>
                 </div>
                 ${item.evaluation ? `<div style="margin-top: 8px; padding: 8px; background: #f8f9fa; border-radius: 6px; font-size: 12px; color: #555;">${item.evaluation}</div>` : ''}
             `;
@@ -2606,6 +3004,53 @@ async function renderHistory() {
     } catch (error) {
         console.error('Ошибка рендеринга истории:', error);
         historyList.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">Ошибка загрузки истории</div>';
+    }
+}
+
+async function renderProfileHistory() {
+    if (!auth.currentUser) return;
+    
+    const profileHistoryList = document.getElementById('profileHistoryList');
+    if (!profileHistoryList) return;
+    
+    try {
+        const localHistory = auth.currentUser.stats.trainingHistory || [];
+        
+        let history = [...localHistory];
+        history.sort((a, b) => new Date(b.date) - new Date(a.date));
+        history = history.slice(0, 5);
+        
+        profileHistoryList.innerHTML = '';
+        
+        if (history.length === 0) {
+            profileHistoryList.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">Нет данных о тренировках</div>';
+            return;
+        }
+        
+        history.forEach(item => {
+            const clientType = clientTypes[item.clientType];
+            const historyItem = document.createElement('div');
+            historyItem.className = 'history-item';
+            historyItem.onclick = () => viewChatHistory(item);
+            
+            historyItem.innerHTML = `
+                <div class="history-item-header">
+                    <div class="history-item-title">${clientType ? clientType.name : 'Тренировка'}</div>
+                    <div class="history-item-score">${item.score}/5</div>
+                </div>
+                <div class="history-item-details">${item.scenario || ''}</div>
+                <div class="history-item-footer">
+                    <div>
+                        <span>${formatDate(item.date)}</span>
+                        <span style="margin-left: 10px; color: #10a37f;">+${item.xp} XP</span>
+                    </div>
+                </div>
+            `;
+            profileHistoryList.appendChild(historyItem);
+        });
+    } catch (error) {
+        console.error('Ошибка рендеринга истории профиля:', error);
+        profileHistoryList.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">Ошибка загрузки истории</div>';
     }
 }
 
@@ -2638,11 +3083,15 @@ function resetChat() {
         chatStatus.textContent = 'Ожидание начала';
         chatStatus.className = 'chat-status';
     }
+    const chatControls = document.getElementById('chatControls');
+    if (chatControls) chatControls.style.display = 'none';
 }
 
 function loadTrainerInterface() {
     const sidebar = document.getElementById('sidebar');
-    const mainContent = document.querySelector('.main-content');
+    const contentWrapper = document.getElementById('contentWrapper');
+    
+    if (!sidebar || !contentWrapper) return;
     
     sidebar.innerHTML = `
         <a href="javascript:void(0);" onclick="switchTab('trainer_dashboard')" class="nav-item active" data-tab="trainer_dashboard">
@@ -2659,7 +3108,7 @@ function loadTrainerInterface() {
         </a>
     `;
     
-    mainContent.innerHTML = `
+    contentWrapper.innerHTML = `
         <div class="tab-content active" id="trainer_dashboard-tab">
             <div class="welcome-section">
                 <div class="section-title">
@@ -2703,7 +3152,7 @@ function loadTrainerInterface() {
                 <div class="section-title">
                     <i class="fas fa-history"></i>
                     <span>Все тренировки</span>
-                    <div style="margin-left: auto; display: flex; gap: 10px;">
+                    <div style="margin-left: auto;">
                         <select id="sessionFilter" onchange="filterSessions()" style="padding: 6px 12px; border-radius: 6px; border: 1px solid #ddd; font-size: 13px;">
                             <option value="all">Все вертикали</option>
                             <option value="Программа лояльности">Лояльность</option>
@@ -2713,9 +3162,6 @@ function loadTrainerInterface() {
                             <option value="Аптека">Аптека</option>
                             <option value="Сборка">Сборка</option>
                         </select>
-                        <button class="btn btn-primary" onclick="exportTrainerStatisticsPDF()" style="padding: 6px 12px; font-size: 13px;">
-                            <i class="fas fa-file-pdf"></i> Статистика
-                        </button>
                     </div>
                 </div>
                 
@@ -2748,64 +3194,6 @@ function loadTrainerInterface() {
                     <i class="fas fa-chart-bar"></i>
                     <span>Статистика по системе</span>
                 </div>
-                
-                <div class="pdf-export-section">
-                    <div class="section-title">
-                        <i class="fas fa-file-pdf"></i>
-                        <span>Выгрузка статистики в PDF</span>
-                    </div>
-                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
-                        Настройте параметры для выгрузки статистики на планерки и анализ.
-                    </p>
-                    
-                    <div class="statistics-filters">
-                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px;">
-                            <div>
-                                <label style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 13px;">Вертикаль:</label>
-                                <select id="statsVerticalFilter" class="trainer-search-input">
-                                    <option value="all">Все вертикали</option>
-                                    <option value="Программа лояльности">Лояльность</option>
-                                    <option value="ОПК">ОПК</option>
-                                    <option value="Фудтех">Фудтех</option>
-                                    <option value="Маркет">Маркет</option>
-                                    <option value="Аптека">Аптека</option>
-                                    <option value="Сборка">Сборка</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 13px;">Дата с:</label>
-                                <input type="date" id="statsDateFrom" class="trainer-search-input">
-                            </div>
-                            <div>
-                                <label style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 13px;">Дата по:</label>
-                                <input type="date" id="statsDateTo" class="trainer-search-input">
-                            </div>
-                            <div>
-                                <label style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 13px;">Показатели:</label>
-                                <select id="statsMetrics" multiple class="trainer-search-input" style="height: 120px;">
-                                    <option value="sessions" selected>Количество тренировок</option>
-                                    <option value="avg_score" selected>Средний балл</option>
-                                    <option value="top_students" selected>Топ учеников</option>
-                                    <option value="client_types" selected>Распределение по типам клиентов</option>
-                                    <option value="daily_activity" selected>Активность по дням</option>
-                                    <option value="time_distribution">Распределение по времени суток</option>
-                                    <option value="score_distribution">Распределение оценок</option>
-                                    <option value="trainer_comments">Комментарии тренеров</option>
-                                </select>
-                            </div>
-                        </div>
-                        
-                        <div style="display: flex; gap: 10px;">
-                            <button class="btn btn-primary" onclick="generateCustomStatistics()">
-                                <i class="fas fa-chart-bar"></i> Сгенерировать статистику
-                            </button>
-                            <button class="btn btn-secondary" onclick="exportCustomStatisticsPDF()">
-                                <i class="fas fa-file-pdf"></i> Выгрузить в PDF
-                            </button>
-                        </div>
-                    </div>
-                </div>
-                
                 <div id="trainerStatisticsContent">
                     <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
                         Загрузка статистики...
@@ -2826,7 +3214,7 @@ async function loadTrainerDashboard() {
     
     try {
         const students = await auth.getStudents();
-        const allSessions = await auth.getAllTrainingSessions({ vertical: 'all', limit: 50 });
+        const allSessions = await auth.getAllTrainingSessions({ vertical: 'all' });
         
         let html = `
             <div class="stats-cards">
@@ -2838,25 +3226,18 @@ async function loadTrainerDashboard() {
                     <div class="value">${allSessions?.length || 0}</div>
                     <div class="label">Всего тренировок</div>
                 </div>
-                <div class="stat-card">
-                    <div class="value">${new Date().toLocaleDateString('ru-RU')}</div>
-                    <div class="label">Сегодня</div>
-                </div>
             </div>
             
             <div class="section-title" style="margin-top: 25px;">
                 <i class="fas fa-history"></i>
-                <span>Последние тренировки (последние 50)</span>
-                <button class="btn btn-secondary" onclick="exportLatestSessionsPDF()" style="margin-left: auto; padding: 5px 10px; font-size: 12px;">
-                    <i class="fas fa-file-pdf"></i> Выгрузить
-                </button>
+                <span>Последние тренировки</span>
             </div>
             
             <div class="scrollable-container" style="max-height: 400px; overflow-y: auto; margin-top: 10px;">
         `;
         
         if (allSessions?.length) {
-            allSessions.forEach(session => {
+            allSessions.slice(0, 50).forEach(session => {
                 const student = students.find(s => s.id === session.user_id);
                 const clientType = clientTypes[session.client_type];
                 
@@ -2877,9 +3258,6 @@ async function loadTrainerDashboard() {
                             </button>
                             <button class="comment-btn" onclick="openCommentModal('${session.user_id}', '${session.id}', '${student ? student.username : 'Неизвестный'}')">
                                 <i class="fas fa-comment"></i> Комментарий
-                            </button>
-                            <button class="pdf-export-btn-trainer" onclick="exportStudentSessionPDF('${session.user_id}', '${session.id}')">
-                                <i class="fas fa-file-pdf"></i> PDF
                             </button>
                         </div>
                     </div>
@@ -2920,9 +3298,6 @@ async function loadAllStudents() {
             <div class="section-title" style="margin-top: 25px;">
                 <i class="fas fa-users"></i>
                 <span>Все ученики</span>
-                <button class="btn btn-secondary" onclick="exportAllStudentsPDF()" style="margin-left: auto; padding: 5px 10px; font-size: 12px;">
-                    <i class="fas fa-file-pdf"></i> Выгрузить список
-                </button>
             </div>
             
             <div class="scrollable-container" style="max-height: 500px; overflow-y: auto;">
@@ -2970,9 +3345,6 @@ async function loadAllStudents() {
                             <div class="trainer-actions">
                                 <button class="view-chat-btn-trainer" onclick="viewStudentSessions('${student.id}', '${student.username}')">
                                     <i class="fas fa-history"></i> Тренировки
-                                </button>
-                                <button class="pdf-export-btn-trainer" onclick="exportStudentAllSessionsPDF('${student.id}', '${student.username}')">
-                                    <i class="fas fa-file-pdf"></i> Все диалоги
                                 </button>
                             </div>
                         </div>
@@ -3075,9 +3447,6 @@ async function searchStudents() {
                 <i class="fas fa-users"></i>
                 <span>Результаты поиска</span>
                 ${searchTerm ? `<span style="font-size: 12px; color: #666; margin-left: 10px;">По запросу: "${searchTerm}"</span>` : ''}
-                <button class="btn btn-secondary" onclick="exportSearchResultsPDF()" style="margin-left: auto; padding: 5px 10px; font-size: 12px;">
-                    <i class="fas fa-file-pdf"></i> Выгрузить
-                </button>
             </div>
             
             <div class="scrollable-container" style="max-height: 500px; overflow-y: auto;">
@@ -3143,9 +3512,6 @@ async function searchStudents() {
     }
 }
 
-let currentTrainerPage = 1;
-const trainerPageSize = 100;
-
 async function searchSessions() {
     const searchInput = document.getElementById('sessionSearchInput');
     const dateFrom = document.getElementById('sessionDateFrom');
@@ -3164,7 +3530,7 @@ async function searchSessions() {
     
     try {
         const students = await auth.getStudents();
-        let allSessions = await auth.getTrainingSessionsWithPagination(currentTrainerPage, trainerPageSize, { vertical: 'all' });
+        let allSessions = await auth.getAllTrainingSessions({ vertical: 'all' });
         
         const filterSelect = document.getElementById('sessionFilter');
         const filterValue = filterSelect ? filterSelect.value : 'all';
@@ -3204,22 +3570,11 @@ async function searchSessions() {
             filteredSessions = filteredSessions.filter(session => session.score && session.score >= minScore);
         }
         
-        const totalSessionsCount = await auth.getTrainingSessionsCount({ vertical: filterValue });
-        const totalPages = Math.ceil(totalSessionsCount / trainerPageSize);
-        
         let html = `
             <div class="stats-cards">
                 <div class="stat-card">
                     <div class="value">${filteredSessions.length}</div>
                     <div class="label">Найдено тренировок</div>
-                </div>
-                <div class="stat-card">
-                    <div class="value">${totalSessionsCount}</div>
-                    <div class="label">Всего тренировок в системе</div>
-                </div>
-                <div class="stat-card">
-                    <div class="value">${currentTrainerPage}/${totalPages}</div>
-                    <div class="label">Страница</div>
                 </div>
             </div>
             
@@ -3227,18 +3582,6 @@ async function searchSessions() {
                 <i class="fas fa-history"></i>
                 <span>Результаты поиска тренировок</span>
                 ${searchTerm ? `<span style="font-size: 12px; color: #666; margin-left: 10px;">По запросу: "${searchTerm}"</span>` : ''}
-                <div style="margin-left: auto; display: flex; gap: 10px; align-items: center;">
-                    <button class="btn btn-secondary" onclick="changeTrainerPage(${currentTrainerPage - 1})" ${currentTrainerPage <= 1 ? 'disabled' : ''}>
-                        <i class="fas fa-chevron-left"></i>
-                    </button>
-                    <span>Страница ${currentTrainerPage} из ${totalPages}</span>
-                    <button class="btn btn-secondary" onclick="changeTrainerPage(${currentTrainerPage + 1})" ${currentTrainerPage >= totalPages ? 'disabled' : ''}>
-                        <i class="fas fa-chevron-right"></i>
-                    </button>
-                    <button class="btn btn-primary" onclick="exportFilteredSessionsPDF()" style="padding: 6px 12px; font-size: 12px;">
-                        <i class="fas fa-file-pdf"></i> Выгрузить
-                    </button>
-                </div>
             </div>
             
             <div class="scrollable-container" style="max-height: 600px; overflow-y: auto;">
@@ -3288,9 +3631,6 @@ async function searchSessions() {
                                 <button class="comment-btn" onclick="openCommentModal('${session.user_id}', '${session.id}', '${student ? student.username : 'Неизвестный'}')">
                                     <i class="fas fa-comment"></i> Комментарий
                                 </button>
-                                <button class="pdf-export-btn-trainer" onclick="exportStudentSessionPDF('${session.user_id}', '${session.id}')">
-                                    <i class="fas fa-file-pdf"></i> PDF
-                                </button>
                             </div>
                         </div>
                     `;
@@ -3321,18 +3661,6 @@ async function searchSessions() {
     }
 }
 
-async function changeTrainerPage(newPage) {
-    if (newPage < 1) return;
-    
-    const totalSessionsCount = await auth.getTrainingSessionsCount({ vertical: document.getElementById('sessionFilter').value });
-    const totalPages = Math.ceil(totalSessionsCount / trainerPageSize);
-    
-    if (newPage > totalPages) return;
-    
-    currentTrainerPage = newPage;
-    await searchSessions();
-}
-
 function formatTime(dateString) {
     const date = new Date(dateString);
     return date.toLocaleTimeString('ru-RU', {
@@ -3342,21 +3670,17 @@ function formatTime(dateString) {
 }
 
 async function loadAllSessions() {
-    currentTrainerPage = 1;
     await searchSessions();
 }
 
 async function viewStudentSessions(studentId, studentName) {
     try {
-        const sessions = await auth.supabaseRequest(`training_sessions?user_id=eq.${studentId}&order=date.desc&limit=100`);
+        const sessions = await auth.supabaseRequest(`training_sessions?user_id=eq.${studentId}&order=date.desc`);
         
         let html = `
             <div class="section-title">
                 <i class="fas fa-history"></i>
                 <span>Тренировки ученика: ${studentName}</span>
-                <button class="btn btn-primary" onclick="exportStudentAllSessionsPDF('${studentId}', '${studentName}')" style="margin-left: auto; padding: 6px 12px; font-size: 12px;">
-                    <i class="fas fa-file-pdf"></i> Выгрузить все
-                </button>
             </div>
             
             <div class="scrollable-container" style="max-height: 500px; overflow-y: auto;">
@@ -3383,9 +3707,6 @@ async function viewStudentSessions(studentId, studentName) {
                             <button class="comment-btn" onclick="openCommentModal('${studentId}', '${session.id}', '${studentName}')">
                                 <i class="fas fa-comment"></i> Комментарий
                             </button>
-                            <button class="pdf-export-btn-trainer" onclick="exportStudentSessionPDF('${studentId}', '${session.id}')">
-                                <i class="fas fa-file-pdf"></i> PDF
-                            </button>
                         </div>
                     </div>
                 `;
@@ -3399,10 +3720,16 @@ async function viewStudentSessions(studentId, studentName) {
         const tempContainer = document.createElement('div');
         tempContainer.innerHTML = html;
         
-        document.getElementById('chatModalTitle').textContent = `Тренировки ученика: ${studentName}`;
-        document.getElementById('chatModalMessages').innerHTML = '';
-        document.getElementById('chatModalMessages').appendChild(tempContainer);
-        document.getElementById('chatModal').style.display = 'flex';
+        const chatModalTitle = document.getElementById('chatModalTitle');
+        const chatModalMessages = document.getElementById('chatModalMessages');
+        const chatModal = document.getElementById('chatModal');
+        
+        if (chatModalTitle) chatModalTitle.textContent = `Тренировки ученика: ${studentName}`;
+        if (chatModalMessages) {
+            chatModalMessages.innerHTML = '';
+            chatModalMessages.appendChild(tempContainer);
+        }
+        if (chatModal) chatModal.style.display = 'flex';
         
     } catch (error) {
         console.error('Ошибка загрузки тренировок ученика:', error);
@@ -3420,13 +3747,18 @@ async function viewStudentChat(studentId, sessionId) {
         const studentName = student?.[0] ? student[0].username : 'Студент';
         const clientType = clientTypes[sessionData.client_type];
         
-        document.getElementById('chatModalTitle').textContent = `Диалог: ${studentName}`;
-        document.getElementById('chatModalClientType').textContent = clientType ? clientType.name : sessionData.client_type || '-';
-        document.getElementById('chatModalDate').textContent = formatDate(sessionData.date);
-        document.getElementById('chatModalScore').textContent = sessionData.score || 0;
-        
+        const chatModalTitle = document.getElementById('chatModalTitle');
+        const chatModalClientType = document.getElementById('chatModalClientType');
+        const chatModalDate = document.getElementById('chatModalDate');
+        const chatModalScore = document.getElementById('chatModalScore');
         const messagesContainer = document.getElementById('chatModalMessages');
-        messagesContainer.innerHTML = '';
+        const chatModal = document.getElementById('chatModal');
+        
+        if (chatModalTitle) chatModalTitle.textContent = `Диалог: ${studentName}`;
+        if (chatModalClientType) chatModalClientType.textContent = clientType ? clientType.name : sessionData.client_type || '-';
+        if (chatModalDate) chatModalDate.textContent = formatDate(sessionData.date);
+        if (chatModalScore) chatModalScore.textContent = sessionData.score || 0;
+        if (messagesContainer) messagesContainer.innerHTML = '';
         
         let messages = [];
         if (sessionData.messages && Array.isArray(sessionData.messages)) {
@@ -3439,18 +3771,18 @@ async function viewStudentChat(studentId, sessionId) {
             }
         }
         
-        if (messages.length > 0) {
+        if (messages.length > 0 && messagesContainer) {
             messages.forEach(msg => {
                 const messageDiv = document.createElement('div');
                 messageDiv.className = `message ${msg.sender === 'user' ? 'user' : 'ai'}`;
                 messageDiv.textContent = msg.text;
                 messagesContainer.appendChild(messageDiv);
             });
-        } else {
+        } else if (messagesContainer) {
             messagesContainer.innerHTML = '<div style="text-align: center; color: #666; padding: 20px;">Нет данных о диалоге</div>';
         }
         
-        if (sessionData.ai_feedback?.trim()) {
+        if (sessionData.ai_feedback?.trim() && messagesContainer) {
             const aiFeedbackContainer = document.createElement('div');
             aiFeedbackContainer.style.cssText = 'margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;';
             aiFeedbackContainer.innerHTML = `
@@ -3460,7 +3792,7 @@ async function viewStudentChat(studentId, sessionId) {
             messagesContainer.appendChild(aiFeedbackContainer);
         }
         
-        if (sessionData.trainer_comments?.length) {
+        if (sessionData.trainer_comments?.length && messagesContainer) {
             const commentsContainer = document.createElement('div');
             commentsContainer.style.cssText = 'margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;';
             commentsContainer.innerHTML = '<div style="font-weight: 600; margin-bottom: 10px; color: #333;">Комментарии тренера:</div>';
@@ -3481,19 +3813,16 @@ async function viewStudentChat(studentId, sessionId) {
             messagesContainer.appendChild(commentsContainer);
         }
         
-        const actionButtons = document.createElement('div');
-        actionButtons.style.cssText = 'margin-top: 15px; display: flex; gap: 10px; justify-content: center;';
-        actionButtons.innerHTML = `
-            <button class="btn btn-primary" onclick="exportStudentSessionPDF('${studentId}', '${sessionId}')">
-                <i class="fas fa-file-pdf"></i> Выгрузить в PDF
-            </button>
-            <button class="btn btn-secondary" onclick="openCommentModal('${studentId}', '${sessionId}', '${studentName}')">
-                <i class="fas fa-comment"></i> Добавить комментарий
-            </button>
-        `;
-        messagesContainer.appendChild(actionButtons);
+        if (messagesContainer) {
+            const commentButton = document.createElement('button');
+            commentButton.className = 'btn btn-primary';
+            commentButton.style.cssText = 'margin-top: 15px; align-self: center;';
+            commentButton.innerHTML = '<i class="fas fa-comment"></i> Добавить комментарий';
+            commentButton.onclick = () => openCommentModal(studentId, sessionId, studentName);
+            messagesContainer.appendChild(commentButton);
+        }
         
-        document.getElementById('chatModal').style.display = 'flex';
+        if (chatModal) chatModal.style.display = 'flex';
         
     } catch (error) {
         console.error('Ошибка загрузки чата:', error);
@@ -3505,17 +3834,25 @@ function openCommentModal(studentId, sessionId, studentName) {
     selectedStudentForComment = studentId;
     selectedSessionForComment = sessionId;
     
-    document.getElementById('commentModalTitle').textContent = `Комментарий для: ${studentName}`;
-    document.getElementById('commentModalStudentInfo').textContent = `Сессия: ${sessionId}`;
-    document.getElementById('commentText').value = '';
+    const commentModalTitle = document.getElementById('commentModalTitle');
+    const commentModalStudentInfo = document.getElementById('commentModalStudentInfo');
+    const commentModal = document.getElementById('commentModal');
+    
+    if (commentModalTitle) commentModalTitle.textContent = `Комментарий для: ${studentName}`;
+    if (commentModalStudentInfo) commentModalStudentInfo.textContent = `Сессия: ${sessionId}`;
+    
+    const commentText = document.getElementById('commentText');
+    if (commentText) commentText.value = '';
     
     loadExistingComments(sessionId);
     
-    document.getElementById('commentModal').style.display = 'flex';
+    if (commentModal) commentModal.style.display = 'flex';
 }
 
 async function loadExistingComments(sessionId) {
     const existingComments = document.getElementById('existingComments');
+    if (!existingComments) return;
+    
     existingComments.innerHTML = '<div style="color: #666; font-size: 13px; margin-bottom: 10px;">Загрузка комментариев...</div>';
     
     try {
@@ -3550,9 +3887,12 @@ async function loadExistingComments(sessionId) {
 }
 
 async function submitComment() {
-    const commentText = document.getElementById('commentText').value.trim();
+    const commentText = document.getElementById('commentText');
+    if (!commentText) return;
     
-    if (!commentText) {
+    const comment = commentText.value.trim();
+    
+    if (!comment) {
         alert('Введите текст комментария');
         return;
     }
@@ -3563,14 +3903,14 @@ async function submitComment() {
     }
     
     try {
-        const success = await auth.addTrainerComment(selectedSessionForComment, commentText);
+        const success = await auth.addTrainerComment(selectedSessionForComment, comment);
         
         if (success) {
             alert('Комментарий успешно добавлен!');
             closeCommentModal();
             
             const chatModal = document.getElementById('chatModal');
-            if (chatModal.style.display === 'flex') {
+            if (chatModal && chatModal.style.display === 'flex') {
                 viewStudentChat(selectedStudentForComment, selectedSessionForComment);
             }
         } else {
@@ -3583,13 +3923,13 @@ async function submitComment() {
 }
 
 function closeCommentModal() {
-    document.getElementById('commentModal').style.display = 'none';
+    const commentModal = document.getElementById('commentModal');
+    if (commentModal) commentModal.style.display = 'none';
     selectedStudentForComment = null;
     selectedSessionForComment = null;
 }
 
 function filterSessions() {
-    currentTrainerPage = 1;
     loadAllSessions();
 }
 
@@ -3598,13 +3938,18 @@ function viewChatHistory(session) {
     
     const clientType = clientTypes[session.clientType];
     
-    document.getElementById('chatModalTitle').textContent = clientType ? clientType.name : 'Диалог с клиентом';
-    document.getElementById('chatModalClientType').textContent = clientType ? clientType.name : '-';
-    document.getElementById('chatModalDate').textContent = formatDate(session.date);
-    document.getElementById('chatModalScore').textContent = session.score || 0;
-    
+    const chatModalTitle = document.getElementById('chatModalTitle');
+    const chatModalClientType = document.getElementById('chatModalClientType');
+    const chatModalDate = document.getElementById('chatModalDate');
+    const chatModalScore = document.getElementById('chatModalScore');
     const messagesContainer = document.getElementById('chatModalMessages');
-    messagesContainer.innerHTML = '';
+    const chatModal = document.getElementById('chatModal');
+    
+    if (chatModalTitle) chatModalTitle.textContent = clientType ? clientType.name : 'Диалог с клиентом';
+    if (chatModalClientType) chatModalClientType.textContent = clientType ? clientType.name : '-';
+    if (chatModalDate) chatModalDate.textContent = formatDate(session.date);
+    if (chatModalScore) chatModalScore.textContent = session.score || 0;
+    if (messagesContainer) messagesContainer.innerHTML = '';
     
     let messages = [];
     
@@ -3619,7 +3964,7 @@ function viewChatHistory(session) {
         }
     }
     
-    if (messages.length === 0) {
+    if (messages.length === 0 && messagesContainer) {
         messages = [
             { sender: 'ai', text: 'Добрый день! Чем могу помочь?', timestamp: session.date },
             { sender: 'user', text: 'У меня проблема с...', timestamp: new Date(new Date(session.date).getTime() + 60000).toISOString() },
@@ -3628,62 +3973,56 @@ function viewChatHistory(session) {
         ];
     }
     
-    messages.forEach(msg => {
-        const messageDiv = document.createElement('div');
-        messageDiv.className = `message ${msg.sender}`;
-        messageDiv.textContent = msg.text;
-        messagesContainer.appendChild(messageDiv);
-    });
-    
-    if (session.ai_feedback?.trim()) {
-        const aiFeedbackContainer = document.createElement('div');
-        aiFeedbackContainer.style.cssText = 'margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;';
-        aiFeedbackContainer.innerHTML = `
-            <div style="font-weight: 600; margin-bottom: 10px; color: #333;">Обратная связь от DeepSeek:</div>
-            <div style="background: white; padding: 15px; border-radius: 6px; border: 1px solid #e9ecef; font-size: 13px; line-height: 1.6; white-space: pre-wrap; max-height: 400px; overflow-y: auto;">${session.ai_feedback}</div>
-        `;
-        messagesContainer.appendChild(aiFeedbackContainer);
-    }
-    
-    if (session.trainer_comments?.length) {
-        const commentsContainer = document.createElement('div');
-        commentsContainer.style.cssText = 'margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;';
-        commentsContainer.innerHTML = '<div style="font-weight: 600; margin-bottom: 10px; color: #333;">Комментарии тренера:</div>';
-        
-        session.trainer_comments.forEach(comment => {
-            const commentDiv = document.createElement('div');
-            commentDiv.className = 'trainer-comment';
-            commentDiv.innerHTML = `
-                <div class="comment-header">
-                    <span>${comment.trainer}</span>
-                    <span>${formatDate(comment.date)}</span>
-                </div>
-                <div class="comment-text">${comment.comment}</div>
-            `;
-            commentsContainer.appendChild(commentDiv);
+    if (messagesContainer) {
+        messages.forEach(msg => {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${msg.sender}`;
+            messageDiv.textContent = msg.text;
+            messagesContainer.appendChild(messageDiv);
         });
         
-        messagesContainer.appendChild(commentsContainer);
+        if (session.ai_feedback?.trim()) {
+            const aiFeedbackContainer = document.createElement('div');
+            aiFeedbackContainer.style.cssText = 'margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;';
+            aiFeedbackContainer.innerHTML = `
+                <div style="font-weight: 600; margin-bottom: 10px; color: #333;">Обратная связь от DeepSeek:</div>
+                <div style="background: white; padding: 15px; border-radius: 6px; border: 1px solid #e9ecef; font-size: 13px; line-height: 1.6; white-space: pre-wrap; max-height: 400px; overflow-y: auto;">${session.ai_feedback}</div>
+            `;
+            messagesContainer.appendChild(aiFeedbackContainer);
+        }
+        
+        if (session.trainer_comments?.length) {
+            const commentsContainer = document.createElement('div');
+            commentsContainer.style.cssText = 'margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;';
+            commentsContainer.innerHTML = '<div style="font-weight: 600; margin-bottom: 10px; color: #333;">Комментарии тренера:</div>';
+            
+            session.trainer_comments.forEach(comment => {
+                const commentDiv = document.createElement('div');
+                commentDiv.className = 'trainer-comment';
+                commentDiv.innerHTML = `
+                    <div class="comment-header">
+                        <span>${comment.trainer}</span>
+                        <span>${formatDate(comment.date)}</span>
+                    </div>
+                    <div class="comment-text">${comment.comment}</div>
+                `;
+                commentsContainer.appendChild(commentDiv);
+            });
+            
+            messagesContainer.appendChild(commentsContainer);
+        }
     }
     
-    const actionButtons = document.createElement('div');
-    actionButtons.style.cssText = 'margin-top: 15px; display: flex; gap: 10px; justify-content: center;';
-    actionButtons.innerHTML = `
-        <button class="btn btn-primary" onclick="exportSessionPDF(${JSON.stringify(session).replace(/"/g, '&quot;')})">
-            <i class="fas fa-file-pdf"></i> Выгрузить в PDF
-        </button>
-    `;
-    messagesContainer.appendChild(actionButtons);
-    
     setTimeout(() => {
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        if (messagesContainer) messagesContainer.scrollTop = messagesContainer.scrollHeight;
     }, 100);
     
-    document.getElementById('chatModal').style.display = 'flex';
+    if (chatModal) chatModal.style.display = 'flex';
 }
 
 function closeChatModal() {
-    document.getElementById('chatModal').style.display = 'none';
+    const chatModal = document.getElementById('chatModal');
+    if (chatModal) chatModal.style.display = 'none';
 }
 
 function formatDate(dateString) {
@@ -3703,9 +4042,17 @@ function formatDuration(seconds) {
 }
 
 function showResultModal(title, scenario, icon, xpEarned, evaluation, duration, aiFeedback = "") {
-    document.getElementById('resultTitle').textContent = title;
-    document.getElementById('resultIcon').textContent = icon;
-    document.getElementById('resultXP').textContent = `+${xpEarned} XP`;
+    const resultTitle = document.getElementById('resultTitle');
+    const resultIcon = document.getElementById('resultIcon');
+    const resultXP = document.getElementById('resultXP');
+    const resultDetails = document.getElementById('resultDetails');
+    const aiFeedbackContainer = document.getElementById('aiFeedbackContainer');
+    const aiFeedbackContent = document.getElementById('aiFeedbackContent');
+    const resultModal = document.getElementById('resultModal');
+    
+    if (resultTitle) resultTitle.textContent = title;
+    if (resultIcon) resultIcon.textContent = icon;
+    if (resultXP) resultXP.textContent = `+${xpEarned} XP`;
     
     let details = `<div style="margin-bottom: 10px;"><strong>Сценарий:</strong> ${scenario}</div>`;
     
@@ -3723,21 +4070,22 @@ function showResultModal(title, scenario, icon, xpEarned, evaluation, duration, 
         }
     }
     
-    document.getElementById('resultDetails').innerHTML = details;
-    
-    const aiFeedbackContainer = document.getElementById('aiFeedbackContainer');
-    const aiFeedbackContent = document.getElementById('aiFeedbackContent');
+    if (resultDetails) resultDetails.innerHTML = details;
     
     if (aiFeedback && aiFeedback.trim().length > 0) {
-        aiFeedbackContent.textContent = aiFeedback;
-        aiFeedbackContainer.style.display = 'block';
-        aiFeedbackContent.style.maxHeight = '400px';
-        aiFeedbackContent.style.overflowY = 'auto';
-    } else {
+        if (aiFeedbackContent) aiFeedbackContent.textContent = aiFeedback;
+        if (aiFeedbackContainer) {
+            aiFeedbackContainer.style.display = 'block';
+            if (aiFeedbackContent) {
+                aiFeedbackContent.style.maxHeight = '400px';
+                aiFeedbackContent.style.overflowY = 'auto';
+            }
+        }
+    } else if (aiFeedbackContainer) {
         aiFeedbackContainer.style.display = 'none';
     }
     
-    document.getElementById('resultModal').style.display = 'flex';
+    if (resultModal) resultModal.style.display = 'flex';
 }
 
 function showAchievementNotification(achievement) {
@@ -3776,9 +4124,163 @@ function showAchievementNotification(achievement) {
 }
 
 function closeResultModal() {
-    document.getElementById('resultModal').style.display = 'none';
-    document.getElementById('aiFeedbackContainer').style.display = 'none';
+    const resultModal = document.getElementById('resultModal');
+    const aiFeedbackContainer = document.getElementById('aiFeedbackContainer');
+    
+    if (resultModal) resultModal.style.display = 'none';
+    if (aiFeedbackContainer) aiFeedbackContainer.style.display = 'none';
+    
     loadDemoChat();
+}
+
+// Функции для работы с аватаром
+function openAvatarModal() {
+    const modal = document.getElementById('avatarModal');
+    const avatarPreview = document.getElementById('avatarPreview');
+    
+    if (auth.currentUser.avatar_url) {
+        avatarPreview.innerHTML = `<img src="${auth.currentUser.avatar_url}" alt="Текущий аватар">`;
+    } else {
+        avatarPreview.innerHTML = '<i class="fas fa-user"></i>';
+    }
+    
+    const avatarUrlInput = document.getElementById('avatarUrl');
+    avatarUrlInput.value = auth.currentUser.avatar_url || '';
+    
+    modal.style.display = 'flex';
+}
+
+function closeAvatarModal() {
+    const modal = document.getElementById('avatarModal');
+    modal.style.display = 'none';
+}
+
+function selectDefaultAvatar(type) {
+    const urls = {
+        male: 'https://api.dicebear.com/7.x/avataaars/svg?seed=male&backgroundColor=4cc9f0',
+        female: 'https://api.dicebear.com/7.x/avataaars/svg?seed=female&backgroundColor=f472b6',
+        robot: 'https://api.dicebear.com/7.x/bottts/svg?seed=robot&backgroundColor=60a5fa',
+        cat: 'https://api.dicebear.com/7.x/avataaars/svg?seed=cat&backgroundColor=fbbf24'
+    };
+    
+    const urlInput = document.getElementById('avatarUrl');
+    const avatarPreview = document.getElementById('avatarPreview');
+    
+    urlInput.value = urls[type];
+    avatarPreview.innerHTML = `<img src="${urls[type]}" alt="Превью аватара">`;
+}
+
+async function saveAvatar() {
+    const avatarUrlInput = document.getElementById('avatarUrl');
+    const avatarUrl = avatarUrlInput.value.trim();
+    
+    if (!avatarUrl) {
+        alert('Введите URL изображения или выберите один из вариантов');
+        return;
+    }
+    
+    if (!avatarUrl.startsWith('http://') && !avatarUrl.startsWith('https://')) {
+        alert('Пожалуйста, введите корректный URL (начинается с http:// или https://)');
+        return;
+    }
+    
+    try {
+        const success = await auth.updateAvatar(auth.currentUser.id, avatarUrl);
+        
+        if (success) {
+            alert('Аватар успешно обновлен!');
+            
+            const profileAvatar = document.getElementById('profileAvatar');
+            if (profileAvatar) {
+                profileAvatar.innerHTML = `<img src="${avatarUrl}" alt="${auth.currentUser.username}">`;
+            }
+            
+            const headerAvatar = document.getElementById('headerUserAvatar');
+            if (headerAvatar) {
+                headerAvatar.innerHTML = `<img src="${avatarUrl}" alt="${auth.currentUser.username}" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">`;
+            }
+            
+            closeAvatarModal();
+        } else {
+            alert('Ошибка при обновлении аватара');
+        }
+    } catch (error) {
+        console.error('Ошибка сохранения аватара:', error);
+        alert('Ошибка при сохранении аватара');
+    }
+}
+
+// Новая функция для загрузки аватара с компьютера
+function openFileUpload() {
+    const fileInput = document.getElementById('avatarFileInput');
+    if (!fileInput) {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.id = 'avatarFileInput';
+        input.accept = 'image/*';
+        input.style.display = 'none';
+        input.onchange = handleAvatarUpload;
+        document.body.appendChild(input);
+        input.click();
+    } else {
+        fileInput.click();
+    }
+}
+
+async function handleAvatarUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    if (!file.type.startsWith('image/')) {
+        alert('Пожалуйста, выберите файл изображения (JPG, PNG, GIF)');
+        return;
+    }
+    
+    if (file.size > 5 * 1024 * 1024) {
+        alert('Размер файла не должен превышать 5 МБ');
+        return;
+    }
+    
+    const avatarPreview = document.getElementById('avatarPreview');
+    const avatarModal = document.getElementById('avatarModal');
+    
+    if (avatarPreview) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            avatarPreview.innerHTML = `<img src="${e.target.result}" alt="Превью аватара">`;
+            
+            const avatarUrlInput = document.getElementById('avatarUrl');
+            if (avatarUrlInput) {
+                avatarUrlInput.value = e.target.result;
+            }
+        };
+        reader.readAsDataURL(file);
+    }
+    
+    try {
+        const result = await auth.uploadAvatar(auth.currentUser.id, file);
+        
+        if (result.success) {
+            alert('Аватар успешно загружен!');
+            
+            const profileAvatar = document.getElementById('profileAvatar');
+            if (profileAvatar) {
+                profileAvatar.innerHTML = `<img src="${result.url}" alt="${auth.currentUser.username}">`;
+            }
+            
+            const headerAvatar = document.getElementById('headerUserAvatar');
+            if (headerAvatar) {
+                headerAvatar.innerHTML = `<img src="${result.url}" alt="${auth.currentUser.username}" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">`;
+            }
+            
+            if (avatarModal) avatarModal.style.display = 'none';
+        } else {
+            alert(result.message || 'Ошибка при загрузке аватара');
+        }
+    } catch (error) {
+        console.error('Ошибка загрузки аватара:', error);
+        alert('Ошибка при загрузке аватара');
+    }
 }
 
 const style = document.createElement('style');
@@ -3810,6 +4312,318 @@ style.textContent = `
     .vertical-content.expanded {
         max-height: 1000px;
         transition: max-height 0.5s ease-in;
+    }
+    
+    .profile-stats {
+        display: flex;
+        gap: 10px;
+        margin-top: 10px;
+        flex-wrap: wrap;
+    }
+    
+    .profile-avatar-container {
+        text-align: center;
+    }
+    
+    .profile-avatar {
+        width: 100px;
+        height: 100px;
+        background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+        border-radius: var(--radius-xl);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 40px;
+        color: white;
+        box-shadow: var(--shadow-lg);
+        overflow: hidden;
+        position: relative;
+    }
+    
+    .profile-avatar img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        border-radius: var(--radius-xl);
+    }
+    
+    .leaderboard-player {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    
+    .leaderboard-avatar-container {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 16px;
+        overflow: hidden;
+    }
+    
+    .leaderboard-avatar {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        border-radius: 50%;
+    }
+    
+    .rank {
+        position: relative;
+        font-weight: 700;
+        width: 50px;
+        text-align: center;
+    }
+    
+    .rank-1 .trophy {
+        color: #ffd700;
+        font-size: 20px;
+        display: inline-block;
+        animation: trophyGlow 2s infinite;
+    }
+    
+    .rank-2 .trophy {
+        color: #c0c0c0;
+        font-size: 18px;
+        display: inline-block;
+    }
+    
+    .rank-3 .trophy {
+        color: #cd7f32;
+        font-size: 16px;
+        display: inline-block;
+    }
+    
+    @keyframes trophyGlow {
+        0%, 100% {
+            text-shadow: 0 0 5px rgba(255, 215, 0, 0.5);
+        }
+        50% {
+            text-shadow: 0 0 20px rgba(255, 215, 0, 0.8), 0 0 30px rgba(255, 215, 0, 0.6);
+        }
+    }
+    
+    .training-container {
+        display: grid;
+        grid-template-columns: 1fr 1.5fr;
+        gap: 24px;
+        margin-top: 24px;
+        transition: all 0.5s ease;
+    }
+    
+    .chat-expanded {
+        animation: expandChat 0.5s ease;
+    }
+    
+    @keyframes expandChat {
+        from {
+            transform: scale(0.95);
+            opacity: 0.8;
+        }
+        to {
+            transform: scale(1);
+            opacity: 1;
+        }
+    }
+    
+    .avatar-preview-container {
+        display: flex;
+        justify-content: center;
+        margin: 20px 0;
+    }
+    
+    .avatar-preview {
+        width: 120px;
+        height: 120px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 48px;
+        color: white;
+        overflow: hidden;
+        border: 4px solid white;
+        box-shadow: var(--shadow-lg);
+    }
+    
+    .avatar-preview img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+    
+    .avatar-options {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+        margin: 20px 0;
+    }
+    
+    .avatar-option {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 10px;
+        border-radius: var(--radius-md);
+        border: 2px solid var(--border-color);
+        cursor: pointer;
+        transition: all var(--transition-fast);
+    }
+    
+    .avatar-option:hover {
+        border-color: var(--primary-color);
+        transform: translateY(-2px);
+    }
+    
+    .avatar-option-preview {
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        background: var(--bg-surface);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+        color: var(--primary-color);
+        margin-bottom: 8px;
+    }
+    
+    .avatar-option span {
+        font-size: 12px;
+        color: var(--text-secondary);
+    }
+    
+    .help-text {
+        font-size: 12px;
+        color: #666;
+        margin-top: 5px;
+    }
+    
+    .file-upload-section {
+        margin-top: 20px;
+        padding: 15px;
+        background: var(--bg-surface);
+        border-radius: var(--radius-md);
+        border: 2px dashed var(--border-color);
+        text-align: center;
+    }
+    
+    .file-upload-btn {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 20px;
+        background: var(--primary-color);
+        color: white;
+        border: none;
+        border-radius: var(--radius-md);
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+        transition: all var(--transition-fast);
+        margin: 0 auto 10px;
+    }
+    
+    .file-upload-btn:hover {
+        background: var(--primary-dark);
+        transform: translateY(-1px);
+    }
+    
+    .file-info {
+        font-size: 12px;
+        color: var(--text-secondary);
+        margin-top: 5px;
+    }
+    
+    .news-container {
+        position: relative;
+    }
+    
+    .news-scroll-container {
+        overflow-x: auto;
+        white-space: nowrap;
+        padding: 10px 0;
+        scrollbar-width: thin;
+        scrollbar-color: var(--primary-color) var(--bg-surface);
+    }
+    
+    .news-scroll-container::-webkit-scrollbar {
+        height: 8px;
+    }
+    
+    .news-scroll-container::-webkit-scrollbar-track {
+        background: var(--bg-surface);
+        border-radius: 4px;
+    }
+    
+    .news-scroll-container::-webkit-scrollbar-thumb {
+        background: var(--primary-color);
+        border-radius: 4px;
+    }
+    
+    .news-grid {
+        display: inline-flex;
+        gap: 15px;
+    }
+    
+    .news-item {
+        flex: 0 0 auto;
+        width: 300px;
+        white-space: normal;
+    }
+    
+    .scroll-indicator {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 10px;
+    }
+    
+    .scroll-arrow {
+        width: 36px;
+        height: 36px;
+        background: var(--bg-card);
+        border: 1px solid var(--border-color);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all var(--transition-fast);
+        color: var(--text-secondary);
+    }
+    
+    .scroll-arrow:hover {
+        background: var(--primary-color);
+        color: white;
+        border-color: var(--primary-color);
+        transform: scale(1.1);
+    }
+    
+    .scroll-arrow.left {
+        transform: rotate(90deg);
+    }
+    
+    .scroll-arrow.right {
+        transform: rotate(-90deg);
+    }
+    
+    .scroll-arrow.left:hover {
+        transform: rotate(90deg) scale(1.1);
+    }
+    
+    .scroll-arrow.right:hover {
+        transform: rotate(-90deg) scale(1.1);
+    }
+    
+    .chat-controls {
+        text-align: center;
+        margin-top: 10px;
     }
 `;
 document.head.appendChild(style);
@@ -3852,18 +4666,6 @@ setInterval(() => {
         }
     }
 }, 60000);
-
-function finishChat() {
-    if (!trainingInProgress) return;
-    
-    addMessage('user', "[[ДИАЛОГ ЗАВЕРШЕН]]");
-    
-    addMessage('ai', "Подготовка результатов чата...");
-    
-    setTimeout(() => {
-        sendPromptToAI();
-    }, 1000);
-}
 
 async function loadTrainerStatistics() {
     const statisticsContent = document.getElementById('trainerStatisticsContent');
@@ -3945,244 +4747,4 @@ async function loadTrainerStatistics() {
         console.error('Ошибка загрузки статистики:', error);
         statisticsContent.innerHTML = '<p style="color: #dc3545;">Ошибка загрузки данных</p>';
     }
-}
-
-async function generateCustomStatistics() {
-    const vertical = document.getElementById('statsVerticalFilter').value;
-    const dateFrom = document.getElementById('statsDateFrom').value;
-    const dateTo = document.getElementById('statsDateTo').value;
-    const metricsSelect = document.getElementById('statsMetrics');
-    const selectedMetrics = Array.from(metricsSelect.selectedOptions).map(option => option.value);
-    
-    try {
-        const filters = {
-            vertical: vertical !== 'all' ? vertical : null,
-            dateFrom: dateFrom || null,
-            dateTo: dateTo || null
-        };
-        
-        const sessions = await auth.getCustomStatistics(filters);
-        const students = await auth.getStudents();
-        
-        let statsHTML = `
-            <div class="section-title" style="margin-top: 25px;">
-                <i class="fas fa-chart-bar"></i>
-                <span>Сгенерированная статистика</span>
-            </div>
-            
-            <div class="stats-cards">
-        `;
-        
-        if (selectedMetrics.includes('sessions')) {
-            statsHTML += `
-                <div class="stat-card">
-                    <div class="value">${sessions.length}</div>
-                    <div class="label">Тренировок</div>
-                </div>
-            `;
-        }
-        
-        if (selectedMetrics.includes('avg_score') && sessions.length > 0) {
-            const totalScore = sessions.reduce((sum, session) => sum + (session.score || 0), 0);
-            const avgScore = (totalScore / sessions.length).toFixed(2);
-            statsHTML += `
-                <div class="stat-card">
-                    <div class="value">${avgScore}</div>
-                    <div class="label">Средний балл</div>
-                </div>
-            `;
-        }
-        
-        if (selectedMetrics.includes('top_students')) {
-            const studentStats = {};
-            sessions.forEach(session => {
-                if (!studentStats[session.user_id]) {
-                    studentStats[session.user_id] = {
-                        sessions: 0,
-                        totalScore: 0
-                    };
-                }
-                studentStats[session.user_id].sessions++;
-                studentStats[session.user_id].totalScore += session.score || 0;
-            });
-            
-            const topStudents = Object.entries(studentStats)
-                .map(([userId, stats]) => {
-                    const student = students.find(s => s.id === userId);
-                    return {
-                        name: student ? student.username : 'Неизвестный',
-                        sessions: stats.sessions,
-                        avgScore: stats.sessions > 0 ? (stats.totalScore / stats.sessions).toFixed(2) : '0.00'
-                    };
-                })
-                .sort((a, b) => b.sessions - a.sessions)
-                .slice(0, 10);
-            
-            statsHTML += `
-                <div class="stat-card" style="grid-column: span 2;">
-                    <div class="value">Топ-10</div>
-                    <div class="label">Активных учеников</div>
-                </div>
-            `;
-        }
-        
-        statsHTML += `</div>`;
-        
-        if (selectedMetrics.includes('client_types')) {
-            const clientTypeStats = {};
-            sessions.forEach(session => {
-                const type = session.client_type || 'Неизвестно';
-                if (!clientTypeStats[type]) {
-                    clientTypeStats[type] = 0;
-                }
-                clientTypeStats[type]++;
-            });
-            
-            statsHTML += `
-                <div class="section-title" style="margin-top: 20px;">
-                    <i class="fas fa-users"></i>
-                    <span>Распределение по типам клиентов</span>
-                </div>
-                <div class="scrollable-container" style="max-height: 200px;">
-            `;
-            
-            Object.entries(clientTypeStats).forEach(([type, count]) => {
-                const percentage = ((count / sessions.length) * 100).toFixed(1);
-                statsHTML += `
-                    <div class="student-item">
-                        <div class="student-info">
-                            <div class="student-name">${clientTypes[type]?.name || type}</div>
-                        </div>
-                        <div class="student-stats">
-                            <div class="stat-badge">${count}</div>
-                            <div class="stat-badge">${percentage}%</div>
-                        </div>
-                    </div>
-                `;
-            });
-            
-            statsHTML += `</div>`;
-        }
-        
-        document.getElementById('trainerStatisticsContent').innerHTML = statsHTML;
-        
-    } catch (error) {
-        console.error('Ошибка генерации статистики:', error);
-        alert('Ошибка при генерации статистики');
-    }
-}
-
-async function exportCustomStatisticsPDF() {
-    alert('Функция выгрузки статистики в PDF будет реализована в следующей версии');
-}
-
-async function exportAllSessionsPDF() {
-    if (!auth.currentUser) return;
-    
-    try {
-        const sessions = await auth.getUserTrainingHistory(auth.currentUser.id);
-        if (sessions.length === 0) {
-            alert('У вас нет тренировок для выгрузки');
-            return;
-        }
-        
-        alert(`Будет выгружено ${sessions.length} сессий. Функция экспорта в PDF будет реализована в следующей версии.`);
-        
-    } catch (error) {
-        console.error('Ошибка выгрузки PDF:', error);
-        alert('Ошибка при подготовке данных для выгрузки');
-    }
-}
-
-function showDateRangePDFExport() {
-    const dateRangeHTML = `
-        <div class="modal-content" style="max-width: 400px;">
-            <div class="result-icon">📅</div>
-            <h2 class="result-title">Выгрузка по датам</h2>
-            
-            <div class="form-group">
-                <label>Дата с:</label>
-                <input type="date" id="exportDateFrom" class="trainer-search-input">
-            </div>
-            
-            <div class="form-group">
-                <label>Дата по:</label>
-                <input type="date" id="exportDateTo" class="trainer-search-input">
-            </div>
-            
-            <div style="display: flex; gap: 10px; margin-top: 20px;">
-                <button class="btn btn-primary" onclick="exportDateRangePDF()" style="flex: 1;">
-                    Выгрузить
-                </button>
-                <button class="btn btn-secondary" onclick="closeModal()" style="flex: 1;">
-                    Отмена
-                </button>
-            </div>
-        </div>
-    `;
-    
-    const modal = document.createElement('div');
-    modal.className = 'modal';
-    modal.style.display = 'flex';
-    modal.innerHTML = dateRangeHTML;
-    document.body.appendChild(modal);
-    
-    window.closeModal = function() {
-        modal.remove();
-    };
-}
-
-async function exportDateRangePDF() {
-    const dateFrom = document.getElementById('exportDateFrom').value;
-    const dateTo = document.getElementById('exportDateTo').value;
-    
-    if (!dateFrom || !dateTo) {
-        alert('Укажите диапазон дат');
-        return;
-    }
-    
-    alert(`Выгрузка сессий с ${dateFrom} по ${dateTo}. Функция экспорта в PDF будет реализована в следующей версии.`);
-    
-    document.querySelector('.modal').remove();
-}
-
-function exportCurrentSessionPDF() {
-    if (chatMessages.length === 0) {
-        alert('Нет текущей сессии для выгрузки');
-        return;
-    }
-    
-    alert('Выгрузка текущей сессии в PDF. Функция будет реализована в следующей версии.');
-}
-
-function exportSessionPDF(session) {
-    alert(`Выгрузка сессии от ${formatDate(session.date)} в PDF. Функция будет реализована в следующей версии.`);
-}
-
-async function exportTrainerStatisticsPDF() {
-    alert('Выгрузка статистики тренера в PDF. Функция будет реализована в следующей версии.');
-}
-
-async function exportLatestSessionsPDF() {
-    alert('Выгрузка последних сессий в PDF. Функция будет реализована в следующей версии.');
-}
-
-async function exportAllStudentsPDF() {
-    alert('Выгрузка списка учеников в PDF. Функция будет реализована в следующей версии.');
-}
-
-async function exportStudentAllSessionsPDF(studentId, studentName) {
-    alert(`Выгрузка всех сессий ученика ${studentName} в PDF. Функция будет реализована в следующей версии.`);
-}
-
-async function exportStudentSessionPDF(studentId, sessionId) {
-    alert('Выгрузка сессии ученика в PDF. Функция будет реализована в следующей версии.');
-}
-
-async function exportSearchResultsPDF() {
-    alert('Выгрузка результатов поиска в PDF. Функция будет реализована в следующей версии.');
-}
-
-async function exportFilteredSessionsPDF() {
-    alert('Выгрузка отфильтрованных сессий в PDF. Функция будет реализована в следующей версии.');
 }

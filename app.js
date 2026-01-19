@@ -492,11 +492,9 @@ async register(username, group = '', password) {
     
 async updateAvatar(userId, avatarUrl) {
     try {
-        // Сначала проверяем, есть ли уже аватар у пользователя
         const existingAvatar = await this.supabaseRequest(`user_avatars?user_id=eq.${userId}`);
         
         if (existingAvatar && existingAvatar.length > 0) {
-            // Обновляем существующий аватар
             await this.supabaseRequest(
                 `user_avatars?user_id=eq.${userId}`,
                 'PATCH',
@@ -518,19 +516,7 @@ async updateAvatar(userId, avatarUrl) {
                 }
             );
         }
-
-         async getUserAvatar(userId) {
-        try {
-            const avatars = await this.supabaseRequest(`user_avatars?user_id=eq.${userId}`);
-            if (avatars && avatars.length > 0) {
-                return avatars[0].avatar_url;
-            }
-            return null;
-        } catch (error) {
-            console.error('Ошибка получения аватара:', error);
-            return null;
-        }
-    }
+        
         // Обновляем локальные данные
         if (this.currentUser && this.currentUser.id === userId) {
             this.currentUser.avatar_url = avatarUrl;
@@ -543,8 +529,21 @@ async updateAvatar(userId, avatarUrl) {
         console.error('Ошибка обновления аватара:', error);
         return false;
     }
+}  
+
+
+async getUserAvatar(userId) {
+    try {
+        const avatars = await this.supabaseRequest(`user_avatars?user_id=eq.${userId}`);
+        if (avatars && avatars.length > 0) {
+            return avatars[0].avatar_url;
+        }
+        return null;
+    } catch (error) {
+        console.error('Ошибка получения аватара:', error);
+        return null;
+    }
 }
-    
     async uploadAvatar(userId, file) {
         try {
             if (!file || !file.type.startsWith('image/')) {

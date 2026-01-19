@@ -355,38 +355,58 @@ async register(username, group = '', password) {
         }
     }
     
-    async getLeaderboard(filterVertical = 'all') {
-        try {
-            const users = await this.supabaseRequest('users');
+async getLeaderboard(filterVertical = 'all') {
+    try {
+        const users = await this.supabaseRequest('users');
+        
+        if (!users || users.length === 0) return [];
+        
+        const leaderboard = [];
+        
+        // Для каждого пользователя получаем аватар
+        for (const user of users) {
+            let stats = {};
+            try {
+                stats = typeof user.stats === 'string' ? JSON.parse(user.stats) : user.stats;
+            } catch { }
             
-            if (!users || users.length === 0) return [];
+            // Получаем аватар из таблицы user_avatars
+            let avatarUrl = null;
+            try {
+                const avatarData = await this.supabaseRequest(`user_avatars?user_id=eq.${user.id}`);
+                if (avatarData && avatarData.length > 0) {
+                    avatarUrl = avatarData[0].avatar_url;
+                }
+            } catch (error) {
+                console.warn(`Не удалось загрузить аватар для пользователя ${user.id}:`, error);
+            }
             
-            const leaderboard = users.map(user => {
-                let stats = {};
-                try {
-                    stats = typeof user.stats === 'string' ? JSON.parse(user.stats) : user.stats;
-                } catch { }
-                
-                return {
-                    id: user.id,
-                    username: user.username || 'Без имени',
-                    group: user.group_name || 'Без вертикали',
-                    level: stats.currentLevel || 1,
-                    sessions: stats.completedSessions || 0,
-                    avgScore: stats.averageScore || 0,
-                    xp: stats.totalXP || 0,
-                    avatar_url: user.avatar_url || ''
-                };
-            })
-            .filter(user => filterVertical === 'all' || user.group === filterVertical)
-            .sort((a, b) => b.xp - a.xp);
-            
-            return leaderboard.slice(0, 100);
-        } catch (error) {
-            console.error('Ошибка получения рейтинга:', error);
-            return [];
+            leaderboard.push({
+                id: user.id,
+                username: user.username || 'Без имени',
+                group: user.group_name || 'Без вертикали',
+                level: stats.currentLevel || 1,
+                sessions: stats.completedSessions || 0,
+                avgScore: stats.averageScore || 0,
+                xp: stats.totalXP || 0,
+                avatar_url: avatarUrl || ''  // Теперь здесь будет аватар из user_avatars
+            });
         }
+        
+        // Фильтрация и сортировка
+        const filtered = leaderboard.filter(user => 
+            filterVertical === 'all' || user.group === filterVertical
+        );
+        
+        return filtered
+            .sort((a, b) => b.xp - a.xp)
+            .slice(0, 100);
+            
+    } catch (error) {
+        console.error('Ошибка получения рейтинга:', error);
+        return [];
     }
+}
             
     async getSystemStats() {
         try {
@@ -2843,9 +2863,21 @@ async function updateLeaderboard(filter = 'all') {
                 trophy = '🥉';
             }
             
-            const avatar = player.avatar_url && player.avatar_url.startsWith('data:image') ? 
-                `<img src="${player.avatar_url}" alt="${player.username}" class="leaderboard-avatar">` : 
-                '<i class="fas fa-user"></i>';
+            // Отображение аватара
+            let avatarHTML = '';
+            if (player.avatar_url && player.avatar_url.startsWith('data:image')) {
+                avatarHTML = `<img src="${player.avatar_url}" alt="${player.username}" class="leaderboard-avatar">`;
+            } else {
+                // Иконка по умолчанию
+                const defaultColors = ['#667eea', '#764ba2', '#f093fb', '#4facfe', '#00f2fe', '#43e97b', '#38f9d7', '#fa709a'];
+                const colorIndex = player.username.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % defaultColors.length;
+                const initials = player.username.substring(0, 2).toUpperCase();
+                avatarHTML = `
+                    <div class="default-avatar" style="background: ${defaultColors[colorIndex]};">
+                        ${initials}
+                    </div>
+                `;
+            }
             
             row.innerHTML = `
                 <td class="rank ${rankClass}">
@@ -2854,7 +2886,7 @@ async function updateLeaderboard(filter = 'all') {
                 <td class="player-name">
                     <div class="leaderboard-player">
                         <div class="leaderboard-avatar-container">
-                            ${avatar}
+                            ${avatarHTML}
                         </div>
                         <span>${player.username} ${player.id === auth.currentUser?.id ? '(Вы)' : ''}</span>
                     </div>

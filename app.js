@@ -490,33 +490,55 @@ async register(username, group = '', password) {
         }
     }
     
-    async updateAvatar(userId, avatarUrl) {
-        try {
-            const response = await fetch('/api/supabase-proxy', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    endpoint: `users?id=eq.${userId}`,
-                    method: 'PATCH',
-                    body: { avatar_url: avatarUrl },
-                    headers: { 'Prefer': 'return=representation' }
-                })
-            });
-            
-            if (response.ok) {
-                if (this.currentUser && this.currentUser.id === userId) {
-                    this.currentUser.avatar_url = avatarUrl;
-                    localStorage.setItem('dialogue_currentUser', JSON.stringify(this.currentUser));
+async updateAvatar(userId, avatarUrl) {
+    try {
+        // Сначала проверяем, есть ли уже аватар у пользователя
+        // ИСПРАВЛЕНО: используем supabaseRequest вместо fetch
+        const existingAvatar = await this.supabaseRequest(`user_avatars?user_id=eq.${userId}`);
+        
+        let success;
+        
+        if (existingAvatar && existingAvatar.length > 0) {
+            // Обновляем существующий аватар через supabaseRequest
+            const updateResult = await this.supabaseRequest(
+                `user_avatars?user_id=eq.${userId}`,
+                'PATCH',
+                { 
+                    avatar_url: avatarUrl,
+                    updated_at: new Date().toISOString()
                 }
-                this.cache.clear();
-                return true;
-            }
-            return false;
-        } catch (error) {
-            console.error('Ошибка обновления аватара:', error);
-            return false;
+            );
+            success = true;
+        } else {
+            // Создаем новый аватар через supabaseRequest
+            const createResult = await this.supabaseRequest(
+                'user_avatars',
+                'POST',
+                { 
+                    user_id: userId,
+                    avatar_url: avatarUrl
+                }
+            );
+            success = true;
         }
+        
+        if (success) {
+            // Обновляем локальные данные
+            if (this.currentUser && this.currentUser.id === userId) {
+                this.currentUser.avatar_url = avatarUrl;
+                localStorage.setItem('dialogue_currentUser', JSON.stringify(this.currentUser));
+            }
+            this.cache.clear();
+            return true;
+        }
+        
+        return false;
+        
+    } catch (error) {
+        console.error('Ошибка обновления аватара:', error);
+        return false;
     }
+}
     
     async uploadAvatar(userId, file) {
         try {

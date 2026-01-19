@@ -357,31 +357,32 @@ async register(username, group = '', password) {
     
 async getLeaderboard(filterVertical = 'all') {
     try {
-        const users = await this.supabaseRequest('users');
+        // Получаем всех пользователей
+        const users = await this.supabaseRequest('users?select=id,username,group_name,stats');
         
         if (!users || users.length === 0) return [];
         
-        const leaderboard = [];
+        // Получаем ВСЕ аватары одним запросом
+        const allAvatars = await this.supabaseRequest('user_avatars?select=user_id,avatar_url');
         
-        // Для каждого пользователя получаем аватар
-        for (const user of users) {
+        // Создаем Map для быстрого поиска аватаров по user_id
+        const avatarMap = new Map();
+        if (allAvatars && Array.isArray(allAvatars)) {
+            allAvatars.forEach(avatar => {
+                avatarMap.set(avatar.user_id, avatar.avatar_url);
+            });
+        }
+        
+        const leaderboard = users.map(user => {
             let stats = {};
             try {
                 stats = typeof user.stats === 'string' ? JSON.parse(user.stats) : user.stats;
             } catch { }
             
-            // Получаем аватар из таблицы user_avatars
-            let avatarUrl = null;
-            try {
-                const avatarData = await this.supabaseRequest(`user_avatars?user_id=eq.${user.id}`);
-                if (avatarData && avatarData.length > 0) {
-                    avatarUrl = avatarData[0].avatar_url;
-                }
-            } catch (error) {
-                console.warn(`Не удалось загрузить аватар для пользователя ${user.id}:`, error);
-            }
+            // Получаем аватар из Map (быстро)
+            const avatarUrl = avatarMap.get(user.id) || null;
             
-            leaderboard.push({
+            return {
                 id: user.id,
                 username: user.username || 'Без имени',
                 group: user.group_name || 'Без вертикали',
@@ -389,9 +390,9 @@ async getLeaderboard(filterVertical = 'all') {
                 sessions: stats.completedSessions || 0,
                 avgScore: stats.averageScore || 0,
                 xp: stats.totalXP || 0,
-                avatar_url: avatarUrl || ''  // Теперь здесь будет аватар из user_avatars
-            });
-        }
+                avatar_url: avatarUrl || ''
+            };
+        });
         
         // Фильтрация и сортировка
         const filtered = leaderboard.filter(user => 

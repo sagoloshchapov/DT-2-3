@@ -493,14 +493,11 @@ async register(username, group = '', password) {
 async updateAvatar(userId, avatarUrl) {
     try {
         // Сначала проверяем, есть ли уже аватар у пользователя
-        // ИСПРАВЛЕНО: используем supabaseRequest вместо fetch
         const existingAvatar = await this.supabaseRequest(`user_avatars?user_id=eq.${userId}`);
         
-        let success;
-        
         if (existingAvatar && existingAvatar.length > 0) {
-            // Обновляем существующий аватар через supabaseRequest
-            const updateResult = await this.supabaseRequest(
+            // Обновляем существующий аватар
+            await this.supabaseRequest(
                 `user_avatars?user_id=eq.${userId}`,
                 'PATCH',
                 { 
@@ -508,31 +505,39 @@ async updateAvatar(userId, avatarUrl) {
                     updated_at: new Date().toISOString()
                 }
             );
-            success = true;
         } else {
-            // Создаем новый аватар через supabaseRequest
-            const createResult = await this.supabaseRequest(
+            // Создаем новый аватар
+            await this.supabaseRequest(
                 'user_avatars',
                 'POST',
                 { 
                     user_id: userId,
-                    avatar_url: avatarUrl
+                    avatar_url: avatarUrl,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
                 }
             );
-            success = true;
         }
-        
-        if (success) {
-            // Обновляем локальные данные
-            if (this.currentUser && this.currentUser.id === userId) {
-                this.currentUser.avatar_url = avatarUrl;
-                localStorage.setItem('dialogue_currentUser', JSON.stringify(this.currentUser));
+
+         async getUserAvatar(userId) {
+        try {
+            const avatars = await this.supabaseRequest(`user_avatars?user_id=eq.${userId}`);
+            if (avatars && avatars.length > 0) {
+                return avatars[0].avatar_url;
             }
-            this.cache.clear();
-            return true;
+            return null;
+        } catch (error) {
+            console.error('Ошибка получения аватара:', error);
+            return null;
         }
-        
-        return false;
+    }
+        // Обновляем локальные данные
+        if (this.currentUser && this.currentUser.id === userId) {
+            this.currentUser.avatar_url = avatarUrl;
+            localStorage.setItem('dialogue_currentUser', JSON.stringify(this.currentUser));
+        }
+        this.cache.clear();
+        return true;
         
     } catch (error) {
         console.error('Ошибка обновления аватара:', error);

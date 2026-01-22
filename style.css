@@ -3151,3 +3151,76 @@ h4 { font-size: 1.125rem; }
     grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
     gap: 15px;
 }
+
+.achievements-section .stats-cards {
+    margin-top: 20px;
+    margin-bottom: 25px;
+}
+
+.achievements-section .stats-cards .stat-card {
+    min-height: 120px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.achievements-section .stats-cards .stat-card .value {
+    font-size: 28px;
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 8px;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    text-align: center;
+    line-height: 1.2;
+}
+
+.achievements-section .stats-cards .stat-card .label {
+    font-size: 12px;
+    text-align: center;
+    line-height: 1.3;
+    min-height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 5px;
+    word-break: break-word;
+    overflow-wrap: break-word;
+}
+
+@media (max-width: 768px) {
+    .achievements-section .stats-cards {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .achievements-section .stats-cards .stat-card {
+        min-height: 100px;
+    }
+    
+    .achievements-section .stats-cards .stat-card .value {
+        font-size: 24px;
+    }
+    
+    .achievements-section .stats-cards .stat-card .label {
+        font-size: 11px;
+    }
+}
+
+@media (max-width: 480px) {
+    .achievements-section .stats-cards {
+        grid-template-columns: 1fr;
+    }
+}
+
+.compact-label {
+    font-size: 12px !important;
+    line-height: 1.2 !important;
+    padding: 0 3px !important;
+}
+
+.shortened-label {
+    font-size: 11px !important;
+    line-height: 1.1 !important;
+}

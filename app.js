@@ -11,67 +11,58 @@ class SupabaseAuth {
         this.supabaseUrl = SUPABASE_URL;
         this.supabaseKey = SUPABASE_ANON_KEY;
         this.cache = new Map();
+        this.promptsCache = null;
+        this.newsCache = null;
+        this.promptsLoaded = false;
+        this.newsLoaded = false;
     }
 
-
-async loadUserWithAvatar(userData) {
-    try {
-        // Загружаем актуальный аватар из базы
-        const avatarUrl = await this.getUserAvatar(userData.id);
+    async supabaseRequest(endpoint, method = 'GET', body = null) {
+        const cacheKey = `${method}:${endpoint}`;
         
-        return {
-            ...userData,
-            avatar_url: avatarUrl || userData.avatar_url || ''
-        };
-    } catch (error) {
-        console.error('Ошибка загрузки аватара:', error);
-        return userData;
-    }
-}
-    
-async supabaseRequest(endpoint, method = 'GET', body = null) {
-    const cacheKey = `${method}:${endpoint}`;
-    
-    if (method === 'GET' && this.cache.has(cacheKey)) {
-        return this.cache.get(cacheKey);
-    }
-    
-    try {
-        const response = await fetch('/api/supabase-proxy', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ endpoint, method, body })
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        if (method === 'GET' && this.cache.has(cacheKey)) {
+            return this.cache.get(cacheKey);
         }
         
-        if (response.status === 204) return { success: true };
-        
-        const data = await response.json();
-        
-
-        if (method !== 'GET') {
-            this.cache.clear();
-            console.log('Кэш очищен после', method, 'запроса');
-        } else {
-            // Для GET запросов кэшируем
-            this.cache.set(cacheKey, data);
-            setTimeout(() => this.cache.delete(cacheKey), 30000);
+        try {
+            const response = await fetch('/api/supabase-proxy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ endpoint, method, body })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            if (response.status === 204) return { success: true };
+            
+            const data = await response.json();
+            
+            if (method !== 'GET') {
+                this.cache.clear();
+            } else {
+                this.cache.set(cacheKey, data);
+                setTimeout(() => this.cache.delete(cacheKey), 30000);
+            }
+            
+            return data;
+        } catch (error) {
+            console.error('Supabase proxy error:', error);
+            throw error;
         }
-        
-        return data;
-    } catch (error) {
-        console.error('Supabase proxy error:', error);
-        throw error;
     }
-}
     
     async loadPrompts() {
+        if (this.promptsLoaded && this.promptsCache) {
+            return this.promptsCache;
+        }
+        
         try {
             const prompts = await this.supabaseRequest('prompts?select=*');
-            return prompts || [];
+            this.promptsCache = prompts || [];
+            this.promptsLoaded = true;
+            return this.promptsCache;
         } catch (error) {
             console.error('Ошибка загрузки промтов:', error);
             return [];
@@ -79,9 +70,15 @@ async supabaseRequest(endpoint, method = 'GET', body = null) {
     }
     
     async loadNews() {
+        if (this.newsLoaded && this.newsCache) {
+            return this.newsCache;
+        }
+        
         try {
             const news = await this.supabaseRequest('news?select=*&order=created_at.desc');
-            return news || [];
+            this.newsCache = news || [];
+            this.newsLoaded = true;
+            return this.newsCache;
         } catch (error) {
             console.error('Ошибка загрузки новостей:', error);
             return [];
@@ -100,127 +97,124 @@ async supabaseRequest(endpoint, method = 'GET', body = null) {
         return hash.toString(36);
     }
     
-async register(username, group = '', password) {
-    try {
-        console.log('Начало регистрации:', username);
-        
-
-        const existing = await this.supabaseRequest(`users?username=eq.${encodeURIComponent(username)}`);
-        
-        if (existing && existing.length > 0) {
-            return { success: false, message: 'Пользователь с таким никнеймом уже существует' };
-        }
-        
-        if (password.length < 6) {
-            return { success: false, message: 'Пароль должен быть не менее 6 символов' };
-        }
-        
-        if (!group) {
-            return { success: false, message: 'Выберите вертикаль' };
-        }
-        
-        const passwordHash = this.hashPassword(password);
-        const now = new Date().toISOString();
-        
-        const newUser = {
-            username: username.trim(),
-            group_name: group.trim(),
-            password_hash: passwordHash,
-            role: 'user',
-            stats: JSON.stringify({
-                currentLevel: 1,
-                totalXP: 0,
-                completedSessions: 0,
-                totalScore: 0,
-                averageScore: 0,
-                currentStreak: 0,
-                lastTrainingDate: null,
-                registrationDate: now,
-                achievementsUnlocked: ["first_blood"],
-                clientTypesCompleted: Object.fromEntries(
-                    ['aggressive', 'passive', 'demanding', 'indecisive', 'chatty'].map(type => [
-                        type,
-                        { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 }
-                    ])
-                ),
-                trainingHistory: [],
-                vertical: group.trim(),
-                trainerComments: [],
-                dailySessions: 0,
-                lastSessionDate: null
-            })
-        };
-        
-        console.log('Отправка данных нового пользователя:', newUser);
-        
-        // ИСПРАВЛЕНО: используем supabaseRequest вместо прямого fetch
-        const responseData = await this.supabaseRequest('users', 'POST', newUser);
-        
-        console.log('Данные ответа:', responseData);
-        
-        this.cache.clear();
-        
-        return { 
-            success: true, 
-            message: 'Регистрация успешна! Теперь войдите в систему.' 
-        };
-    } catch (error) {
-        console.error('Ошибка регистрации:', error);
-        return { 
-            success: false, 
-            message: 'Ошибка соединения с базой данных. Проверьте подключение к интернету.' 
-        };
-    }
-}
-
-async login(username, password) {
-    try {
-        const users = await this.supabaseRequest(`users?username=eq.${encodeURIComponent(username)}`);
-        
-        if (!users || !users.length) {
-            return { success: false, message: 'Пользователь не найден' };
-        }
-        
-        const user = users[0];
-        const passwordHash = this.hashPassword(password);
-        
-        if (user.password_hash !== passwordHash) {
-            return { success: false, message: 'Неверный пароль' };
-        }
-        
-        let userStats;
+    async register(username, group = '', password) {
         try {
-            userStats = typeof user.stats === 'string' ? JSON.parse(user.stats) : user.stats;
-        } catch {
-            userStats = this.createDefaultStats(user.group_name);
+            console.log('Начало регистрации:', username);
+            
+            const existing = await this.supabaseRequest(`users?username=eq.${encodeURIComponent(username)}`);
+            
+            if (existing && existing.length > 0) {
+                return { success: false, message: 'Пользователь с таким никнеймом уже существует' };
+            }
+            
+            if (password.length < 6) {
+                return { success: false, message: 'Пароль должен быть не менее 6 символов' };
+            }
+            
+            if (!group) {
+                return { success: false, message: 'Выберите вертикаль' };
+            }
+            
+            const passwordHash = this.hashPassword(password);
+            const now = new Date().toISOString();
+            
+            const newUser = {
+                username: username.trim(),
+                group_name: group.trim(),
+                password_hash: passwordHash,
+                role: 'user',
+                stats: JSON.stringify({
+                    currentLevel: 1,
+                    totalXP: 0,
+                    completedSessions: 0,
+                    totalScore: 0,
+                    averageScore: 0,
+                    currentStreak: 0,
+                    lastTrainingDate: null,
+                    registrationDate: now,
+                    achievementsUnlocked: ["first_blood"],
+                    clientTypesCompleted: Object.fromEntries(
+                        ['aggressive', 'passive', 'demanding', 'indecisive', 'chatty'].map(type => [
+                            type,
+                            { sessions: 0, totalXP: 0, totalScore: 0, avgScore: 0 }
+                        ])
+                    ),
+                    trainingHistory: [],
+                    vertical: group.trim(),
+                    trainerComments: [],
+                    dailySessions: 0,
+                    lastSessionDate: null
+                })
+            };
+            
+            console.log('Отправка данных нового пользователя:', newUser);
+            
+            const responseData = await this.supabaseRequest('users', 'POST', newUser);
+            
+            console.log('Данные ответа:', responseData);
+            
+            this.cache.clear();
+            
+            return { 
+                success: true, 
+                message: 'Регистрация успешна! Теперь войдите в систему.' 
+            };
+        } catch (error) {
+            console.error('Ошибка регистрации:', error);
+            return { 
+                success: false, 
+                message: 'Ошибка соединения с базой данных. Проверьте подключение к интернету.' 
+            };
         }
-        
-        // ПОЛУЧАЕМ АВАТАР ИЗ ТАБЛИЦЫ user_avatars
-        const avatarUrl = await this.getUserAvatar(user.id);
-        
-        this.currentUser = {
-            id: user.id,
-            username: user.username,
-            group: user.group_name,
-            role: user.role || 'user',
-            avatar_url: avatarUrl || '', // Используем аватар из отдельной таблицы
-            stats: userStats
-        };
-        
-        this.userRole = this.currentUser.role;
-        this.isAuthenticated = true;
-        localStorage.setItem('dialogue_currentUser', JSON.stringify(this.currentUser));
-        
-        return { 
-            success: true, 
-            user: this.currentUser,
-            message: 'Вход выполнен успешно'
-        };
-    } catch (error) {
-        console.error('Ошибка входа:', error);
-        return { success: false, message: 'Ошибка соединения с базой данных' };
     }
-}
+
+    async login(username, password) {
+        try {
+            const users = await this.supabaseRequest(`users?username=eq.${encodeURIComponent(username)}`);
+            
+            if (!users || !users.length) {
+                return { success: false, message: 'Пользователь не найден' };
+            }
+            
+            const user = users[0];
+            const passwordHash = this.hashPassword(password);
+            
+            if (user.password_hash !== passwordHash) {
+                return { success: false, message: 'Неверный пароль' };
+            }
+            
+            let userStats;
+            try {
+                userStats = typeof user.stats === 'string' ? JSON.parse(user.stats) : user.stats;
+            } catch {
+                userStats = this.createDefaultStats(user.group_name);
+            }
+            
+            const avatarUrl = await this.getUserAvatar(user.id);
+            
+            this.currentUser = {
+                id: user.id,
+                username: user.username,
+                group: user.group_name,
+                role: user.role || 'user',
+                avatar_url: avatarUrl || '',
+                stats: userStats
+            };
+            
+            this.userRole = this.currentUser.role;
+            this.isAuthenticated = true;
+            localStorage.setItem('dialogue_currentUser', JSON.stringify(this.currentUser));
+            
+            return { 
+                success: true, 
+                user: this.currentUser,
+                message: 'Вход выполнен успешно'
+            };
+        } catch (error) {
+            console.error('Ошибка входа:', error);
+            return { success: false, message: 'Ошибка соединения с базой данных' };
+        }
+    }
 
     createDefaultStats(group) {
         return {
@@ -359,59 +353,59 @@ async login(username, password) {
         }
     }
     
-async getLeaderboard(filterVertical = 'all') {
-    try {
-        // Получаем всех пользователей
-        const users = await this.supabaseRequest('users?select=id,username,group_name,stats');
-        
-        if (!users || users.length === 0) return [];
-        
-        // Получаем ВСЕ аватары одним запросом
-        const allAvatars = await this.supabaseRequest('user_avatars?select=user_id,avatar_url');
-        
-        // Создаем Map для быстрого поиска аватаров по user_id
-        const avatarMap = new Map();
-        if (allAvatars && Array.isArray(allAvatars)) {
-            allAvatars.forEach(avatar => {
-                avatarMap.set(avatar.user_id, avatar.avatar_url);
-            });
+    async getLeaderboard(filterVertical = 'all') {
+        try {
+            const users = await this.supabaseRequest('users?select=id,username,group_name,stats');
+            
+            if (!users || users.length === 0) return [];
+            
+            const allAvatars = await this.supabaseRequest('user_avatars?select=user_id,avatar_url');
+            
+            const avatarMap = new Map();
+            if (allAvatars && Array.isArray(allAvatars)) {
+                allAvatars.forEach(avatar => {
+                    avatarMap.set(avatar.user_id, avatar.avatar_url);
+                });
+            }
+            
+            const leaderboard = users
+                .filter(user => {
+                    const username = user.username.toLowerCase();
+                    return !['test', 'testf', 'testm', 'testo', 'tests', 'testa'].includes(username);
+                })
+                .map(user => {
+                    let stats = {};
+                    try {
+                        stats = typeof user.stats === 'string' ? JSON.parse(user.stats) : user.stats;
+                    } catch { }
+                    
+                    const avatarUrl = avatarMap.get(user.id) || null;
+                    
+                    return {
+                        id: user.id,
+                        username: user.username || 'Без имени',
+                        group: user.group_name || 'Без вертикали',
+                        level: stats.currentLevel || 1,
+                        sessions: stats.completedSessions || 0,
+                        avgScore: stats.averageScore || 0,
+                        xp: stats.totalXP || 0,
+                        avatar_url: avatarUrl || ''
+                    };
+                });
+            
+            const filtered = leaderboard.filter(user => 
+                filterVertical === 'all' || user.group === filterVertical
+            );
+            
+            return filtered
+                .sort((a, b) => b.xp - a.xp)
+                .slice(0, 100);
+                
+        } catch (error) {
+            console.error('Ошибка получения рейтинга:', error);
+            return [];
         }
-        
-        const leaderboard = users.map(user => {
-            let stats = {};
-            try {
-                stats = typeof user.stats === 'string' ? JSON.parse(user.stats) : user.stats;
-            } catch { }
-            
-            // Получаем аватар из Map (быстро)
-            const avatarUrl = avatarMap.get(user.id) || null;
-            
-            return {
-                id: user.id,
-                username: user.username || 'Без имени',
-                group: user.group_name || 'Без вертикали',
-                level: stats.currentLevel || 1,
-                sessions: stats.completedSessions || 0,
-                avgScore: stats.averageScore || 0,
-                xp: stats.totalXP || 0,
-                avatar_url: avatarUrl || ''
-            };
-        });
-        
-        // Фильтрация и сортировка
-        const filtered = leaderboard.filter(user => 
-            filterVertical === 'all' || user.group === filterVertical
-        );
-        
-        return filtered
-            .sort((a, b) => b.xp - a.xp)
-            .slice(0, 100);
-            
-    } catch (error) {
-        console.error('Ошибка получения рейтинга:', error);
-        return [];
     }
-}
             
     async getSystemStats() {
         try {
@@ -515,60 +509,58 @@ async getLeaderboard(filterVertical = 'all') {
         }
     }
     
-async updateAvatar(userId, avatarUrl) {
-    try {
-        const existingAvatar = await this.supabaseRequest(`user_avatars?user_id=eq.${userId}`);
-        
-        if (existingAvatar && existingAvatar.length > 0) {
-            await this.supabaseRequest(
-                `user_avatars?user_id=eq.${userId}`,
-                'PATCH',
-                { 
-                    avatar_url: avatarUrl,
-                    updated_at: new Date().toISOString()
-                }
-            );
-        } else {
-            // Создаем новый аватар
-            await this.supabaseRequest(
-                'user_avatars',
-                'POST',
-                { 
-                    user_id: userId,
-                    avatar_url: avatarUrl,
-                    created_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString()
-                }
-            );
+    async updateAvatar(userId, avatarUrl) {
+        try {
+            const existingAvatar = await this.supabaseRequest(`user_avatars?user_id=eq.${userId}`);
+            
+            if (existingAvatar && existingAvatar.length > 0) {
+                await this.supabaseRequest(
+                    `user_avatars?user_id=eq.${userId}`,
+                    'PATCH',
+                    { 
+                        avatar_url: avatarUrl,
+                        updated_at: new Date().toISOString()
+                    }
+                );
+            } else {
+                await this.supabaseRequest(
+                    'user_avatars',
+                    'POST',
+                    { 
+                        user_id: userId,
+                        avatar_url: avatarUrl,
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString()
+                    }
+                );
+            }
+            
+            if (this.currentUser && this.currentUser.id === userId) {
+                this.currentUser.avatar_url = avatarUrl;
+                localStorage.setItem('dialogue_currentUser', JSON.stringify(this.currentUser));
+            }
+            this.cache.clear();
+            return true;
+            
+        } catch (error) {
+            console.error('Ошибка обновления аватара:', error);
+            return false;
         }
-        
-        // Обновляем локальные данные
-        if (this.currentUser && this.currentUser.id === userId) {
-            this.currentUser.avatar_url = avatarUrl;
-            localStorage.setItem('dialogue_currentUser', JSON.stringify(this.currentUser));
-        }
-        this.cache.clear();
-        return true;
-        
-    } catch (error) {
-        console.error('Ошибка обновления аватара:', error);
-        return false;
-    }
-}  
+    }  
 
-
-async getUserAvatar(userId) {
-    try {
-        const avatars = await this.supabaseRequest(`user_avatars?user_id=eq.${userId}`);
-        if (avatars && avatars.length > 0) {
-            return avatars[0].avatar_url;
+    async getUserAvatar(userId) {
+        try {
+            const avatars = await this.supabaseRequest(`user_avatars?user_id=eq.${userId}`);
+            if (avatars && avatars.length > 0) {
+                return avatars[0].avatar_url;
+            }
+            return null;
+        } catch (error) {
+            console.error('Ошибка получения аватара:', error);
+            return null;
         }
-        return null;
-    } catch (error) {
-        console.error('Ошибка получения аватара:', error);
-        return null;
     }
-}
+    
     async uploadAvatar(userId, file) {
         try {
             if (!file || !file.type.startsWith('image/')) {
@@ -616,6 +608,10 @@ async getUserAvatar(userId) {
         this.isAuthenticated = false;
         this.userRole = null;
         this.cache.clear();
+        this.promptsCache = null;
+        this.newsCache = null;
+        this.promptsLoaded = false;
+        this.newsLoaded = false;
         localStorage.removeItem('dialogue_currentUser');
         this.showAuthModal();
     }
@@ -683,30 +679,28 @@ async getUserAvatar(userId) {
             groupBadge.style.display = 'inline-block';
         }
         
-const headerAvatar = document.getElementById('headerUserAvatar');
-    if (headerAvatar) {
-        // Проверяем, есть ли аватар в currentUser
-        if (this.currentUser.avatar_url && this.currentUser.avatar_url.startsWith('data:image')) {
-            headerAvatar.innerHTML = `<img src="${this.currentUser.avatar_url}" alt="${this.currentUser.username}" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">`;
-        } else {
-
-            this.getUserAvatar(this.currentUser.id).then(avatarUrl => {
-                if (avatarUrl && avatarUrl.startsWith('data:image')) {
-                    this.currentUser.avatar_url = avatarUrl;
-                    headerAvatar.innerHTML = `<img src="${avatarUrl}" alt="${this.currentUser.username}" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">`;
-                    // Сохраняем обновленного пользователя в localStorage
-                    localStorage.setItem('dialogue_currentUser', JSON.stringify(this.currentUser));
-                } else {
+        const headerAvatar = document.getElementById('headerUserAvatar');
+        if (headerAvatar) {
+            if (this.currentUser.avatar_url && this.currentUser.avatar_url.startsWith('data:image')) {
+                headerAvatar.innerHTML = `<img src="${this.currentUser.avatar_url}" alt="${this.currentUser.username}" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">`;
+            } else {
+                this.getUserAvatar(this.currentUser.id).then(avatarUrl => {
+                    if (avatarUrl && avatarUrl.startsWith('data:image')) {
+                        this.currentUser.avatar_url = avatarUrl;
+                        headerAvatar.innerHTML = `<img src="${avatarUrl}" alt="${this.currentUser.username}" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">`;
+                        localStorage.setItem('dialogue_currentUser', JSON.stringify(this.currentUser));
+                    } else {
+                        headerAvatar.innerHTML = '<i class="fas fa-user"></i>';
+                    }
+                }).catch(() => {
                     headerAvatar.innerHTML = '<i class="fas fa-user"></i>';
-                }
-            }).catch(() => {
-                headerAvatar.innerHTML = '<i class="fas fa-user"></i>';
-            });
+                });
+            }
         }
+        
+        loadInterfaceForRole();
     }
     
-    loadInterfaceForRole();
-}
     isTrainer() {
         return this.userRole === 'trainer';
     }
@@ -752,45 +746,87 @@ const levels = [
     { level: 7, name: "Легенда", requiredXP: 2200, badge: "⭐" }
 ];
 
+// РАСШИРЕННЫЙ СПИСОК ДОСТИЖЕНИЙ
 const achievements = [
+    // Базовые достижения
     { id: "first_blood", name: "Первая кровь", icon: "🎯", description: "Пройдите первую тренировку", category: "базовые", condition: "sessions >= 1" },
     { id: "quick_start", name: "Быстрый старт", icon: "⚡", description: "Пройдите 3 тренировки за неделю", category: "активность", condition: "weekly_sessions >= 3" },
     { id: "regular_5", name: "Регулярный", icon: "📅", description: "5 тренировок в месяц", category: "активность", condition: "monthly_sessions >= 5" },
     { id: "regular_10", name: "Активный", icon: "🏃", description: "10 тренировок в месяц", category: "активность", condition: "monthly_sessions >= 10" },
     { id: "regular_20", name: "Супер-активный", icon: "🚀", description: "20 тренировок в месяц", category: "активность", condition: "monthly_sessions >= 20" },
+    
+    // Серии
     { id: "streak_3", name: "Последователь", icon: "🔥", description: "3 дня подряд", category: "активность", condition: "streak >= 3" },
     { id: "streak_7", name: "Непрерывный", icon: "💪", description: "7 дней подряд", category: "активность", condition: "streak >= 7" },
     { id: "streak_30", name: "Легенда стрика", icon: "👑", description: "30 дней подряд", category: "активность", condition: "streak >= 30" },
+    
+    // Качество работы
     { id: "score_5", name: "Отличник", icon: "⭐", description: "Получите оценку 5", category: "качество", condition: "max_score >= 5" },
     { id: "score_avg_4", name: "Стабильный", icon: "📊", description: "Средний балл 4+", category: "качество", condition: "avg_score >= 4" },
     { id: "score_avg_4.5", name: "Профессионал", icon: "🎖️", description: "Средний балл 4.5+", category: "качество", condition: "avg_score >= 4.5" },
     { id: "perfect_5", name: "Идеально", icon: "💎", description: "5 тренировок подряд на 5", category: "качество", condition: "perfect_streak >= 5" },
+    
+    // Прогресс
     { id: "level_3", name: "Специалист", icon: "🏆", description: "Достигните 3 уровня", category: "прогресс", condition: "level >= 3" },
     { id: "level_5", name: "Мастер", icon: "👑", description: "Достигните 5 уровня", category: "прогресс", condition: "level >= 5" },
     { id: "level_7", name: "Гуру", icon: "🌟", description: "Достигните 7 уровня", category: "прогресс", condition: "level >= 7" },
     { id: "xp_500", name: "Опытный", icon: "💼", description: "Заработайте 500 XP", category: "прогресс", condition: "total_xp >= 500" },
     { id: "xp_1000", name: "Ветеран", icon: "🛡️", description: "Заработайте 1000 XP", category: "прогресс", condition: "total_xp >= 1000" },
     { id: "xp_2000", name: "Легенда XP", icon: "🏛️", description: "Заработайте 2000 XP", category: "прогресс", condition: "total_xp >= 2000" },
+    
+    // Типы клиентов
     { id: "all_types", name: "Универсал", icon: "🎭", description: "Поработайте со всеми типами клиентов", category: "типы клиентов", condition: "all_client_types" },
     { id: "master_aggressive", name: "Укротитель", icon: "😠", description: "10 тренировок с агрессивными", category: "типы клиентов", condition: "aggressive_sessions >= 10" },
     { id: "master_passive", name: "Психолог", icon: "😔", description: "10 тренировок с пассивными", category: "типы клиентов", condition: "passive_sessions >= 10" },
     { id: "master_demanding", name: "Эксперт", icon: "🧐", description: "10 тренировок с требовательными", category: "типы клиентов", condition: "demanding_sessions >= 10" },
     { id: "master_indecisive", name: "Наставник", icon: "🤔", description: "10 тренировок с нерешительными", category: "типы клиентов", condition: "indecisive_sessions >= 10" },
-    { id: "master_chatty", name: "Душа компании", icon: "😄", description: "10 тренировок с 'славными малыми'", category: "типы клиентов", condition: "chatty_sessions >= 10" }
+    { id: "master_chatty", name: "Душа компании", icon: "😄", description: "10 тренировок с 'славными малыми'", category: "типы клиентов", condition: "chatty_sessions >= 10" },
+    
+    // Новые достижения
+    { id: "early_bird", name: "Жаворонок", icon: "🌅", description: "Пройдите тренировку до 9 утра", category: "особые", condition: "early_session" },
+    { id: "night_owl", name: "Сова", icon: "🌙", description: "Пройдите тренировку после 22:00", category: "особые", condition: "late_session" },
+    { id: "weekend_warrior", name: "Выходной боец", icon: "🎪", description: "Пройдите тренировку в выходной", category: "особые", condition: "weekend_session" },
+    { id: "quick_thinker", name: "Быстрый ум", icon: "⚡", description: "Завершите тренировку менее чем за 3 минуты с оценкой 4+", category: "особые", condition: "quick_session" },
+    { id: "perfect_10", name: "Совершенство", icon: "💯", description: "10 тренировок подряд с оценкой 5", category: "качество", condition: "perfect_streak >= 10" },
+    { id: "conversation_master", name: "Мастер диалога", icon: "💬", description: "Отправьте более 100 сообщений в чатах", category: "активность", condition: "total_messages >= 100" },
+    { id: "conflict_resolver", name: "Миротворец", icon: "🕊️", description: "Решите 50 конфликтных ситуаций", category: "особые", condition: "conflicts_resolved >= 50" },
+    { id: "versatile_expert", name: "Разносторонний эксперт", icon: "🎯", description: "Пройдите по 5 тренировок каждого типа клиентов", category: "типы клиентов", condition: "all_types_5" },
+    { id: "first_month", name: "Первый месяц", icon: "📆", description: "Активно тренируйтесь в течение первого месяца", category: "активность", condition: "first_month_active" },
+    { id: "one_year", name: "Год совершенства", icon: "🎂", description: "Тренируйтесь в течение года", category: "активность", condition: "one_year_active" },
+    { id: "vertical_champion", name: "Чемпион вертикали", icon: "🥇", description: "Займите 1 место в рейтинге своей вертикали", category: "соревнование", condition: "vertical_rank == 1" },
+    { id: "top_3_vertical", name: "Топ-3 вертикали", icon: "🥉", description: "Войдите в топ-3 своей вертикали", category: "соревнование", condition: "vertical_rank <= 3" },
+    { id: "global_top_10", name: "Мировой топ-10", icon: "🌍", description: "Войдите в топ-10 общего рейтинга", category: "соревнование", condition: "global_rank <= 10" },
+    { id: "daily_challenge", name: "Дневной вызов", icon: "☀️", description: "Выполните все 5 тренировок за один день", category: "особые", condition: "daily_sessions >= 5" }
 ];
 
 let dynamicVerticalPrompts = {};
 let dynamicNews = [];
+let selectedClientType = null;
+let currentPrompt = null;
+let trainingInProgress = false;
+let trainingStartTime = null;
+let chatMessages = [];
+let progressChart = null;
+let achievementsChart = null;
+let trainingTimerInterval = null;
+let selectedStudentForComment = null;
+let selectedSessionForComment = null;
+let lastAIFeedback = "";
+let dailyLimit = 5;
+let dailySessionsUsed = 0;
+let lastResetTime = null;
+let isRandomClient = false;
+let lastChatSessionData = null;
 
 async function loadDynamicPrompts() {
     try {
         const prompts = await auth.loadPrompts();
-        dynamicVerticalPrompts = prompts?.reduce((acc, prompt) => {
+        dynamicVerticalPrompts = prompts.reduce((acc, prompt) => {
             if (prompt.vertical && prompt.content) {
                 acc[prompt.vertical] = prompt.content;
             }
             return acc;
-        }, {}) || {};
+        }, {});
     } catch (error) {
         console.error('Ошибка загрузки промтов:', error);
         dynamicVerticalPrompts = {};
@@ -810,21 +846,6 @@ async function loadDynamicNews() {
 function getPromptForVertical(vertical) {
     return dynamicVerticalPrompts[vertical] || "";
 }
-
-let selectedClientType = null;
-let currentPrompt = null;
-let trainingInProgress = false;
-let trainingStartTime = null;
-let chatMessages = [];
-let progressChart = null;
-let trainingTimerInterval = null;
-let selectedStudentForComment = null;
-let selectedSessionForComment = null;
-let lastAIFeedback = "";
-let dailyLimit = 5;
-let dailySessionsUsed = 0;
-let lastResetTime = null;
-let isRandomClient = false;
 
 async function sendPromptToAI() {
     try {
@@ -1046,33 +1067,494 @@ function loadInterfaceForRole() {
     }
 }
 
+function loadAchievementsTab() {
+    if (!auth.currentUser) return '';
+    
+    const userStats = auth.currentUser.stats;
+    const userAchievements = userStats.achievementsUnlocked || [];
+    
+    // Статистика для проверки достижений
+    const stats = calculateAchievementStats();
+    
+    let html = `
+        <div class="achievements-section">
+            <div class="section-title">
+                <span>🏆 Достижения</span>
+            </div>
+            
+            <div class="stats-cards">
+                <div class="stat-card">
+                    <div class="value">${userAchievements.length}/${achievements.length}</div>
+                    <div class="label">Открыто достижений</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value">${calculateCompletionPercentage()}%</div>
+                    <div class="label">Прогресс</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value">${getNextAchievement()}</div>
+                    <div class="label">Ближайшее достижение</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value">${getRarestAchievement()}</div>
+                    <div class="label">Самое редкое</div>
+                </div>
+            </div>
+            
+            <div class="achievements-filter">
+                <button class="filter-btn active" onclick="filterAchievements('all', event)">Все</button>
+                <button class="filter-btn" onclick="filterAchievements('базовые', event)">Базовые</button>
+                <button class="filter-btn" onclick="filterAchievements('активность', event)">Активность</button>
+                <button class="filter-btn" onclick="filterAchievements('качество', event)">Качество</button>
+                <button class="filter-btn" onclick="filterAchievements('прогресс', event)">Прогресс</button>
+                <button class="filter-btn" onclick="filterAchievements('типы клиентов', event)">Типы клиентов</button>
+                <button class="filter-btn" onclick="filterAchievements('особые', event)">Особые</button>
+                <button class="filter-btn" onclick="filterAchievements('соревнование', event)">Соревнование</button>
+                <button class="filter-btn" onclick="filterAchievements('unlocked', event)">Полученные</button>
+                <button class="filter-btn" onclick="filterAchievements('locked', event)">Не полученные</button>
+            </div>
+            
+            <div class="achievements-grid" id="achievementsGrid"></div>
+        </div>
+        
+        <div class="progress-panel">
+            <div class="section-title">
+                <span>📈 Прогресс по категориям</span>
+            </div>
+            <div class="chart-container">
+                <canvas id="achievementsChart"></canvas>
+            </div>
+        </div>
+    `;
+    
+    return html;
+}
+
+function calculateAchievementStats() {
+    if (!auth.currentUser) return {};
+    
+    const userStats = auth.currentUser.stats;
+    const today = new Date();
+    const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const monthAgo = new Date();
+    monthAgo.setMonth(monthAgo.getMonth() - 1);
+    
+    const weeklySessions = userStats.trainingHistory?.filter(session => 
+        new Date(session.date) >= weekAgo
+    ).length || 0;
+    
+    const monthlySessions = userStats.trainingHistory?.filter(session => 
+        new Date(session.date) >= monthAgo
+    ).length || 0;
+    
+    let perfectStreak = 0;
+    const recentSessions = userStats.trainingHistory?.slice(0, 10) || [];
+    for (const session of recentSessions) {
+        if (session.score === 5) {
+            perfectStreak++;
+        } else {
+            break;
+        }
+    }
+    
+    let allClientTypes = false;
+    const clientTypesCount = {};
+    Object.keys(clientTypes).forEach(type => {
+        clientTypesCount[type] = userStats.clientTypesCompleted?.[type]?.sessions || 0;
+    });
+    
+    const uniqueTypes = Object.values(clientTypesCount).filter(count => count > 0).length;
+    allClientTypes = uniqueTypes >= Object.keys(clientTypes).length;
+    
+    const hour = today.getHours();
+    const trainingBefore9am = hour < 9;
+    const trainingAfter10pm = hour >= 22;
+    const isWeekend = today.getDay() === 0 || today.getDay() === 6;
+    
+    let totalMessages = 0;
+    userStats.trainingHistory?.forEach(session => {
+        if (session.messages && Array.isArray(session.messages)) {
+            totalMessages += session.messages.length;
+        }
+    });
+    
+    return {
+        sessions: userStats.completedSessions,
+        max_score: Math.max(...(userStats.trainingHistory?.map(h => h.score) || [0])),
+        avg_score: userStats.averageScore,
+        level: userStats.currentLevel,
+        total_xp: userStats.totalXP,
+        streak: userStats.currentStreak,
+        aggressive_sessions: userStats.clientTypesCompleted?.aggressive?.sessions || 0,
+        passive_sessions: userStats.clientTypesCompleted?.passive?.sessions || 0,
+        demanding_sessions: userStats.clientTypesCompleted?.demanding?.sessions || 0,
+        indecisive_sessions: userStats.clientTypesCompleted?.indecisive?.sessions || 0,
+        chatty_sessions: userStats.clientTypesCompleted?.chatty?.sessions || 0,
+        weekly_sessions: weeklySessions,
+        monthly_sessions: monthlySessions,
+        perfect_streak: perfectStreak,
+        perfect_sessions: userStats.trainingHistory?.filter(s => s.score === 5).length || 0,
+        all_client_types: allClientTypes,
+        early_session: trainingBefore9am,
+        late_session: trainingAfter10pm,
+        weekend_session: isWeekend,
+        total_messages: totalMessages,
+        daily_sessions: dailySessionsUsed,
+        conflicts_resolved: Math.floor(userStats.completedSessions / 2),
+        first_month_active: userStats.completedSessions >= 10,
+        one_year_active: false
+    };
+}
+
+function calculateCompletionPercentage() {
+    if (!auth.currentUser) return 0;
+    
+    const userAchievements = auth.currentUser.stats.achievementsUnlocked || [];
+    return Math.round((userAchievements.length / achievements.length) * 100);
+}
+
+function getNextAchievement() {
+    if (!auth.currentUser) return "Нет данных";
+    
+    const userAchievements = auth.currentUser.stats.achievementsUnlocked || [];
+    const stats = calculateAchievementStats();
+    
+    for (const achievement of achievements) {
+        if (!userAchievements.includes(achievement.id)) {
+            return achievement.name;
+        }
+    }
+    
+    return "Все получены!";
+}
+
+function getRarestAchievement() {
+    // Здесь можно добавить логику для определения самого редкого достижения
+    return "Легенда стрика";
+}
+
+function filterAchievements(filter, event) {
+    const grid = document.getElementById('achievementsGrid');
+    if (!grid) return;
+    
+    const userStats = auth.currentUser.stats;
+    const userAchievements = userStats.achievementsUnlocked || [];
+    const stats = calculateAchievementStats();
+    
+    let filteredAchievements = achievements;
+    
+    if (filter !== 'all') {
+        if (filter === 'unlocked') {
+            filteredAchievements = achievements.filter(a => userAchievements.includes(a.id));
+        } else if (filter === 'locked') {
+            filteredAchievements = achievements.filter(a => !userAchievements.includes(a.id));
+        } else {
+            filteredAchievements = achievements.filter(a => a.category === filter);
+        }
+    }
+    
+    renderAchievementsGrid(filteredAchievements, userAchievements, stats);
+    
+    document.querySelectorAll('.achievements-filter .filter-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    
+    if (event && event.target) {
+        event.target.classList.add('active');
+    } else {
+        const firstBtn = document.querySelector('.achievements-filter .filter-btn');
+        if (firstBtn) firstBtn.classList.add('active');
+    }
+}
+
+
+function renderAchievementsGrid(achievementsList, userAchievements, stats) {
+    const grid = document.getElementById('achievementsGrid');
+    if (!grid) return;
+    
+    grid.innerHTML = '';
+    
+    if (achievementsList.length === 0) {
+        grid.innerHTML = `
+            <div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--text-secondary);">
+                <div style="font-size: 48px; margin-bottom: 20px;">🏆</div>
+                <div style="font-size: 16px; font-weight: 500; margin-bottom: 10px;">Достижений не найдено</div>
+                <div style="font-size: 14px;">Попробуйте другой фильтр</div>
+            </div>
+        `;
+        return;
+    }
+    
+    achievementsList.forEach(achievement => {
+        const isUnlocked = userAchievements.includes(achievement.id);
+        const progress = calculateAchievementProgress(achievement, stats);
+        
+        const card = document.createElement('div');
+        card.className = `achievement-card ${isUnlocked ? 'unlocked' : 'locked'}`;
+        
+        card.innerHTML = `
+            <div class="achievement-header">
+                <div class="achievement-icon">${achievement.icon}</div>
+                <div class="achievement-title">
+                    <div class="achievement-name">${achievement.name}</div>
+                    <div class="achievement-category">${achievement.category}</div>
+                </div>
+            </div>
+            <div class="achievement-description">${achievement.description}</div>
+            ${progress.showProgress ? `
+                <div class="achievement-progress">
+                    <div class="progress-text">
+                        <span>Прогресс</span>
+                        <span>${progress.current}/${progress.total}</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: ${progress.percentage}%"></div>
+                    </div>
+                </div>
+            ` : ''}
+            <div class="achievement-status ${isUnlocked ? 'status-unlocked' : 'status-locked'}">
+                ${isUnlocked ? '✅ Получено' : '🔒 Не получено'}
+            </div>
+        `;
+        
+        grid.appendChild(card);
+    });
+}
+
+function calculateAchievementProgress(achievement, stats) {
+    let current = 0;
+    let total = 0;
+    let showProgress = false;
+    
+    switch(achievement.condition) {
+        case "sessions >= 1":
+            current = stats.sessions;
+            total = 1;
+            showProgress = true;
+            break;
+        case "weekly_sessions >= 3":
+            current = stats.weekly_sessions;
+            total = 3;
+            showProgress = true;
+            break;
+        case "monthly_sessions >= 5":
+            current = stats.monthly_sessions;
+            total = 5;
+            showProgress = true;
+            break;
+        case "monthly_sessions >= 10":
+            current = stats.monthly_sessions;
+            total = 10;
+            showProgress = true;
+            break;
+        case "monthly_sessions >= 20":
+            current = stats.monthly_sessions;
+            total = 20;
+            showProgress = true;
+            break;
+        case "streak >= 3":
+            current = stats.streak;
+            total = 3;
+            showProgress = true;
+            break;
+        case "streak >= 7":
+            current = stats.streak;
+            total = 7;
+            showProgress = true;
+            break;
+        case "streak >= 30":
+            current = stats.streak;
+            total = 30;
+            showProgress = true;
+            break;
+        case "aggressive_sessions >= 10":
+            current = stats.aggressive_sessions;
+            total = 10;
+            showProgress = true;
+            break;
+        case "passive_sessions >= 10":
+            current = stats.passive_sessions;
+            total = 10;
+            showProgress = true;
+            break;
+        case "demanding_sessions >= 10":
+            current = stats.demanding_sessions;
+            total = 10;
+            showProgress = true;
+            break;
+        case "indecisive_sessions >= 10":
+            current = stats.indecisive_sessions;
+            total = 10;
+            showProgress = true;
+            break;
+        case "chatty_sessions >= 10":
+            current = stats.chatty_sessions;
+            total = 10;
+            showProgress = true;
+            break;
+        case "perfect_streak >= 5":
+            current = stats.perfect_streak;
+            total = 5;
+            showProgress = true;
+            break;
+        case "perfect_streak >= 10":
+            current = stats.perfect_streak;
+            total = 10;
+            showProgress = true;
+            break;
+        case "total_messages >= 100":
+            current = stats.total_messages;
+            total = 100;
+            showProgress = true;
+            break;
+        case "conflicts_resolved >= 50":
+            current = stats.conflicts_resolved;
+            total = 50;
+            showProgress = true;
+            break;
+        case "daily_sessions >= 5":
+            current = stats.daily_sessions;
+            total = 5;
+            showProgress = true;
+            break;
+        default:
+            showProgress = false;
+    }
+    
+    const percentage = showProgress ? Math.min(100, (current / total) * 100) : 0;
+    
+    return {
+        current,
+        total,
+        percentage,
+        showProgress
+    };
+}
+
+function renderAchievementsChart() {
+    if (!auth.currentUser) return;
+    
+    const ctx = document.getElementById('achievementsChart');
+    if (!ctx) return;
+    
+    const userAchievements = auth.currentUser.stats.achievementsUnlocked || [];
+    
+    // Группируем достижения по категориям
+    const categories = {};
+    achievements.forEach(achievement => {
+        if (!categories[achievement.category]) {
+            categories[achievement.category] = {
+                total: 0,
+                unlocked: 0
+            };
+        }
+        categories[achievement.category].total++;
+        
+        if (userAchievements.includes(achievement.id)) {
+            categories[achievement.category].unlocked++;
+        }
+    });
+    
+    const categoryNames = Object.keys(categories);
+    const unlockedData = categoryNames.map(cat => categories[cat].unlocked);
+    const totalData = categoryNames.map(cat => categories[cat].total);
+    
+    // Удаляем предыдущий chart если он существует
+    if (achievementsChart) {
+        achievementsChart.destroy();
+    }
+    
+    achievementsChart = new Chart(ctx.getContext('2d'), {
+        type: 'bar',
+        data: {
+            labels: categoryNames,
+            datasets: [
+                {
+                    label: 'Получено',
+                    data: unlockedData,
+                    backgroundColor: 'rgba(39, 174, 96, 0.7)',
+                    borderColor: 'rgba(39, 174, 96, 1)',
+                    borderWidth: 1
+                },
+                {
+                    label: 'Всего',
+                    data: totalData,
+                    backgroundColor: 'rgba(21, 93, 39, 0.3)',
+                    borderColor: 'rgba(21, 93, 39, 1)',
+                    borderWidth: 1
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Количество достижений'
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Категории'
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    position: 'top',
+                },
+                title: {
+                    display: true,
+                    text: 'Прогресс по категориям достижений'
+                }
+            }
+        }
+    });
+}
+
 function loadStudentInterface() {
     const sidebar = document.getElementById('sidebar');
     const contentWrapper = document.getElementById('contentWrapper');
     
     if (!sidebar || !contentWrapper) return;
     
+    // ДОБАВЛЯЕМ ВКЛАДКУ ДОСТИЖЕНИЙ В САЙДБАР
     sidebar.innerHTML = `
-        <a href="javascript:void(0);" onclick="switchTab('home')" class="nav-item active" data-tab="home">
-            <i class="fas fa-home"></i> Главная
-        </a>
-        <a href="javascript:void(0);" onclick="switchTab('training')" class="nav-item" data-tab="training">
-            <i class="fas fa-dumbbell"></i> Тренировка
-        </a>
-        <a href="javascript:void(0);" onclick="switchTab('progress')" class="nav-item" data-tab="progress">
-            <i class="fas fa-chart-line"></i> Прогресс
-        </a>
-        <a href="javascript:void(0);" onclick="switchTab('leaderboard')" class="nav-item" data-tab="leaderboard">
-            <i class="fas fa-trophy"></i> Рейтинг
-        </a>
-        <a href="javascript:void(0);" onclick="switchTab('profile')" class="nav-item" data-tab="profile">
-            <i class="fas fa-user-circle"></i> Профиль
-        </a>
-        <a href="javascript:void(0);" onclick="switchTab('history')" class="nav-item" data-tab="history">
-            <i class="fas fa-history"></i> История
-        </a>
+        
+<a href="javascript:void(0);" onclick="switchTab('home')" class="nav-item active" data-tab="home">
+    <i class="fas fa-home"></i> Главная
+</a>
+<a href="javascript:void(0);" onclick="switchTab('training')" class="nav-item" data-tab="training">
+    <i class="fas fa-dumbbell"></i> Тренировка
+</a>
+<a href="javascript:void(0);" onclick="switchTab('progress')" class="nav-item" data-tab="progress">
+    <i class="fas fa-chart-line"></i> Прогресс
+</a>
+<a href="javascript:void(0);" onclick="switchTab('leaderboard')" class="nav-item" data-tab="leaderboard">
+    <i class="fas fa-trophy"></i> Рейтинг
+</a>
+<a href="javascript:void(0);" onclick="switchTab('achievements')" class="nav-item" data-tab="achievements">
+    <i class="fas fa-medal"></i> Достижения
+</a>
+<a href="javascript:void(0);" onclick="switchTab('profile')" class="nav-item" data-tab="profile">
+    <i class="fas fa-user-circle"></i> Профиль
+</a>
+<a href="javascript:void(0);" onclick="switchTab('history')" class="nav-item" data-tab="history">
+    <i class="fas fa-history"></i> История
+</a>
     `;
     
+    // Создаем HTML для вкладки достижений
+    const achievementsTabHTML = `
+        <div class="tab-content" id="achievements-tab">
+            ${loadAchievementsTab()}
+        </div>
+    `;
+    
+    // Остальной HTML (как было)
     contentWrapper.innerHTML = `
         <div class="tab-content active" id="home-tab">
             <div class="welcome-section">
@@ -1238,9 +1720,6 @@ function loadStudentInterface() {
                             <button class="btn btn-primary" id="startTrainingBtn" onclick="startTraining()" disabled>
                                 Начать тренировку
                             </button>
-                            <button class="btn btn-secondary" id="endTrainingBtn" onclick="finishChat()" style="display: none;">
-                                Завершить диалог
-                            </button>
                             <button class="btn btn-danger" id="finishTrainingBtn" onclick="finishChat()" style="display: none;">
                                 <i class="fas fa-flag-checkered"></i> Завершить диалог
                             </button>
@@ -1331,6 +1810,8 @@ function loadStudentInterface() {
                 </div>
             </div>
         </div>
+
+        ${achievementsTabHTML}
 
         <div class="tab-content" id="leaderboard-tab">
             <div class="leaderboard">
@@ -1476,51 +1957,25 @@ function loadStudentInterface() {
     renderHistory();
     renderProfileHistory();
     renderDynamicNews();
+    
+    // Инициализируем вкладку достижений
+    renderAchievementsTabContent();
 }
 
-function renderRecentAchievements() {
-    const recentAchievements = document.getElementById('recentAchievements');
-    if (!recentAchievements) return;
+function renderAchievementsTabContent() {
+    const tab = document.getElementById('achievements-tab');
+    if (!tab) return;
     
-    if (!auth.currentUser) {
-        recentAchievements.innerHTML = '<div class="no-achievements">Нет данных</div>';
-        return;
-    }
-    
-    const userAchievements = auth.currentUser.stats.achievementsUnlocked || [];
-    
-    if (userAchievements.length === 0) {
-        recentAchievements.innerHTML = `
-            <div class="no-achievements">
-                <div class="no-achievements-icon">🏆</div>
-                <div class="no-achievements-text">У вас пока нет достижений</div>
-                <div class="no-achievements-subtext">Начните тренировки, чтобы заработать достижения!</div>
-            </div>
-        `;
-        return;
-    }
-    
-    let recentAchievementIds = [...userAchievements].reverse().slice(0, 3);
-    
-    recentAchievements.innerHTML = '<div class="recent-achievements-grid"></div>';
-    const grid = recentAchievements.querySelector('.recent-achievements-grid');
-    
-    recentAchievementIds.forEach(achievementId => {
-        const achievement = achievements.find(a => a.id === achievementId);
-        if (achievement) {
-            const badge = document.createElement('div');
-            badge.className = 'recent-badge';
-            badge.innerHTML = `
-                <div class="recent-badge-icon">${achievement.icon}</div>
-                <div class="recent-badge-info">
-                    <div class="recent-badge-name">${achievement.name}</div>
-                    <div class="recent-badge-desc">${achievement.description}</div>
-                </div>
-            `;
-            badge.title = achievement.description;
-            grid.appendChild(badge);
+
+    setTimeout(() => {
+        try {
+
+            filterAchievements('all');
+            renderAchievementsChart();
+        } catch (error) {
+            console.error('Ошибка инициализации вкладки достижений:', error);
         }
-    });
+    }, 100);
 }
 
 function calculateXPProgress() {
@@ -1635,9 +2090,6 @@ async function startTraining() {
                 chatTitle.textContent = `💬 Диалог с ${isRandomClient ? 'случайным клиентом' : clientType.name.toLowerCase()}`;
             }
             
-            const endBtn = document.getElementById('endTrainingBtn');
-            if (endBtn) endBtn.style.display = 'block';
-            
             const finishBtn = document.getElementById('finishTrainingBtn');
             if (finishBtn) finishBtn.style.display = 'block';
             
@@ -1655,6 +2107,7 @@ async function startTrainingProcess() {
     trainingStartTime = new Date();
     chatMessages = [];
     lastAIFeedback = "";
+    lastChatSessionData = null;
     
     const startBtn = document.getElementById('startTrainingBtn');
     const chatInput = document.getElementById('chatInput');
@@ -1663,7 +2116,10 @@ async function startTrainingProcess() {
     const chatControls = document.getElementById('chatControls');
     
     if (startBtn) startBtn.style.display = 'none';
-    if (chatInput) chatInput.disabled = false;
+    if (chatInput) {
+        chatInput.disabled = false;
+        chatInput.focus();
+    }
     if (sendBtn) sendBtn.disabled = false;
     if (chatStatus) {
         chatStatus.textContent = 'Тренировка активна';
@@ -1679,7 +2135,6 @@ async function startTrainingProcess() {
     startTrainingTimer();
     
     setTimeout(() => {
-        if (chatInput) chatInput.focus();
         if (chatMessagesDiv) chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight;
     }, 100);
 }
@@ -1749,6 +2204,22 @@ function endTraining() {
         }
     }
     
+    lastChatSessionData = {
+        date: new Date().toISOString(),
+        scenario: isRandomClient ? 'Случайный клиент' : clientType.description,
+        score: evaluation.score,
+        xp: 0,
+        icon: clientTypes[selectedClientType]?.icon || "🎯",
+        clientType: selectedClientType,
+        evaluation: evaluation,
+        messages: [...chatMessages],
+        duration: duration,
+        vertical: auth.currentUser.group,
+        prompt_used: currentPrompt,
+        ai_feedback: lastAIFeedback,
+        trainer_comments: []
+    };
+    
     awardXP(
         evaluation.score, 
         isRandomClient ? 'Случайный клиент' : clientType.description, 
@@ -1757,6 +2228,7 @@ function endTraining() {
         duration,
         lastAIFeedback
     ).then(result => {
+        lastChatSessionData.xp = result.xp;
         showResultModal(
             `Тренировка завершена!`,
             `${isRandomClient ? 'Случайный клиент' : clientType.name} (${auth.currentUser.group})`,
@@ -1780,7 +2252,6 @@ function resetTrainingState() {
     clearInterval(trainingTimerInterval);
     
     const startBtn = document.getElementById('startTrainingBtn');
-    const endBtn = document.getElementById('endTrainingBtn');
     const finishBtn = document.getElementById('finishTrainingBtn');
     const chatInput = document.getElementById('chatInput');
     const sendBtn = document.getElementById('sendBtn');
@@ -1792,7 +2263,6 @@ function resetTrainingState() {
         startBtn.style.display = 'flex';
         startBtn.disabled = true;
     }
-    if (endBtn) endBtn.style.display = 'none';
     if (finishBtn) finishBtn.style.display = 'none';
     if (trainingTimer) trainingTimer.textContent = '';
     if (chatInput) chatInput.disabled = true;
@@ -2091,6 +2561,11 @@ async function awardXP(score, scenario, clientType, evaluation, duration, aiFeed
     loadSystemStats();
     renderRecentAchievements();
     
+    // Обновляем вкладку достижений, если она активна
+    if (document.getElementById('achievements-tab')?.classList.contains('active')) {
+        renderAchievementsTabContent();
+    }
+    
     return {
         xp: xpEarned,
         session: sessionData
@@ -2129,8 +2604,25 @@ function checkForEvaluationInResponse(response) {
                     criteria: { autoEvaluated: true }
                 };
                 
+                lastChatSessionData = {
+                    date: new Date().toISOString(),
+                    scenario: isRandomClient ? 'Случайный клиент' : clientTypes[selectedClientType]?.description || '',
+                    score: foundScore,
+                    xp: 0,
+                    icon: clientTypes[selectedClientType]?.icon || "🎯",
+                    clientType: selectedClientType,
+                    evaluation: evaluation,
+                    messages: [...chatMessages],
+                    duration: duration,
+                    vertical: auth.currentUser.group,
+                    prompt_used: currentPrompt,
+                    ai_feedback: lastAIFeedback,
+                    trainer_comments: []
+                };
+                
                 awardXP(foundScore, isRandomClient ? 'Случайный клиент' : clientTypes[selectedClientType]?.description || '', selectedClientType, evaluation.feedback, duration, lastAIFeedback)
                     .then(result => {
+                        lastChatSessionData.xp = result.xp;
                         showResultModal(
                             `Тренировка завершена!`,
                             `Клиент оценил вашу работу на ${foundScore}/5`,
@@ -2161,94 +2653,23 @@ function checkLevelUp() {
     }
 }
 
+// ОБНОВЛЕННАЯ ФУНКЦИЯ ПРОВЕРКИ ДОСТИЖЕНИЙ
 function checkAchievements(score, clientType, duration) {
     if (!auth.currentUser) return;
     
     const newAchievements = [];
     const userStats = auth.currentUser.stats;
     
-    const today = new Date();
-    const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const monthAgo = new Date();
-    monthAgo.setMonth(monthAgo.getMonth() - 1);
+    // Обновляем статистику для проверки достижений
+    const stats = calculateAchievementStats();
     
-    const weeklySessions = userStats.trainingHistory?.filter(session => 
-        new Date(session.date) >= weekAgo
-    ).length || 0;
-    
-    const monthlySessions = userStats.trainingHistory?.filter(session => 
-        new Date(session.date) >= monthAgo
-    ).length || 0;
-    
-    let verticalRank = 999;
-    let globalRank = 999;
-    
-    const hour = today.getHours();
-    const trainingBefore9am = hour < 9;
-    const trainingAfter10pm = hour >= 22;
-    const isWeekend = today.getDay() === 0 || today.getDay() === 6;
-    const quickTraining = duration < 180 && score >= 4;
-    
-    let perfectStreak = 0;
-    const recentSessions = userStats.trainingHistory?.slice(0, 5) || [];
-    for (const session of recentSessions) {
-        if (session.score === 5) {
-            perfectStreak++;
-        } else {
-            break;
-        }
-    }
-    
-    const perfectSessions = userStats.trainingHistory?.filter(s => s.score === 5).length || 0;
-    
-    let totalMessages = 0;
-    userStats.trainingHistory?.forEach(session => {
-        if (session.messages && Array.isArray(session.messages)) {
-            totalMessages += session.messages.length;
-        }
-    });
-    
-    const clientTypesSet = new Set();
-    userStats.trainingHistory?.forEach(session => {
-        if (session.clientType) clientTypesSet.add(session.clientType);
-    });
-    const allClientTypes = clientTypesSet.size >= 5;
-    
-    const stats = {
-        sessions: userStats.completedSessions,
-        max_score: Math.max(score, ...(userStats.trainingHistory?.map(h => h.score) || [0])),
-        avg_score: userStats.averageScore,
-        level: userStats.currentLevel,
-        total_xp: userStats.totalXP,
-        streak: userStats.currentStreak,
-        aggressive_sessions: userStats.clientTypesCompleted?.aggressive?.sessions || 0,
-        passive_sessions: userStats.clientTypesCompleted?.passive?.sessions || 0,
-        demanding_sessions: userStats.clientTypesCompleted?.demanding?.sessions || 0,
-        indecisive_sessions: userStats.clientTypesCompleted?.indecisive?.sessions || 0,
-        chatty_sessions: userStats.clientTypesCompleted?.chatty?.sessions || 0,
-        weekly_sessions: weeklySessions,
-        monthly_sessions: monthlySessions,
-        vertical_rank: verticalRank,
-        global_rank: globalRank,
-        early_session: trainingBefore9am,
-        late_session: trainingAfter10pm,
-        quick_session: quickTraining,
-        weekend_session: isWeekend,
-        perfect_streak: perfectStreak,
-        perfect_sessions: perfectSessions,
-        total_messages: totalMessages,
-        all_client_types: allClientTypes,
-        daily_sessions: dailySessionsUsed,
-        conflicts_resolved: Math.floor(userStats.completedSessions / 2),
-        first_month_active: true,
-        one_year_active: false
-    };
-    
+    // Проверяем каждое достижение
     achievements.forEach(achievement => {
         if (userStats.achievementsUnlocked.includes(achievement.id)) return;
         
         let conditionMet = false;
         
+        // Проверяем условие достижения
         switch(achievement.condition) {
             case "sessions >= 1": conditionMet = stats.sessions >= 1; break;
             case "weekly_sessions >= 3": conditionMet = stats.weekly_sessions >= 3; break;
@@ -2262,6 +2683,7 @@ function checkAchievements(score, clientType, duration) {
             case "avg_score >= 4": conditionMet = stats.avg_score >= 4; break;
             case "avg_score >= 4.5": conditionMet = stats.avg_score >= 4.5; break;
             case "perfect_streak >= 5": conditionMet = stats.perfect_streak >= 5; break;
+            case "perfect_streak >= 10": conditionMet = stats.perfect_streak >= 10; break;
             case "level >= 3": conditionMet = stats.level >= 3; break;
             case "level >= 5": conditionMet = stats.level >= 5; break;
             case "level >= 7": conditionMet = stats.level >= 7; break;
@@ -2274,9 +2696,43 @@ function checkAchievements(score, clientType, duration) {
             case "demanding_sessions >= 10": conditionMet = stats.demanding_sessions >= 10; break;
             case "indecisive_sessions >= 10": conditionMet = stats.indecisive_sessions >= 10; break;
             case "chatty_sessions >= 10": conditionMet = stats.chatty_sessions >= 10; break;
-            case "vertical_rank <= 3": conditionMet = stats.vertical_rank <= 3; break;
-            case "vertical_rank == 1": conditionMet = stats.vertical_rank == 1; break;
-            case "global_rank <= 10": conditionMet = stats.global_rank <= 10; break;
+            case "early_session": conditionMet = stats.early_session; break;
+            case "late_session": conditionMet = stats.late_session; break;
+            case "weekend_session": conditionMet = stats.weekend_session; break;
+            case "quick_session": conditionMet = duration < 180 && score >= 4; break;
+            case "total_messages >= 100": conditionMet = stats.total_messages >= 100; break;
+            case "conflicts_resolved >= 50": conditionMet = stats.conflicts_resolved >= 50; break;
+            case "all_types_5": 
+                const allTypes5 = Object.keys(clientTypes).every(type => 
+                    userStats.clientTypesCompleted?.[type]?.sessions >= 5
+                );
+                conditionMet = allTypes5;
+                break;
+            case "first_month_active": 
+                const registrationDate = new Date(userStats.registrationDate || new Date());
+                const monthAgo = new Date();
+                monthAgo.setMonth(monthAgo.getMonth() - 1);
+                conditionMet = registrationDate >= monthAgo && stats.sessions >= 10;
+                break;
+            case "one_year_active": 
+                const yearAgo = new Date();
+                yearAgo.setFullYear(yearAgo.getFullYear() - 1);
+                const regDate = new Date(userStats.registrationDate || new Date());
+                conditionMet = regDate <= yearAgo;
+                break;
+            case "vertical_rank == 1": 
+                // Здесь нужно добавить логику для проверки позиции в рейтинге
+                conditionMet = false;
+                break;
+            case "vertical_rank <= 3":
+                // Здесь нужно добавить логику для проверки позиции в рейтинге
+                conditionMet = false;
+                break;
+            case "global_rank <= 10":
+                // Здесь нужно добавить логику для проверки позиции в рейтинге
+                conditionMet = false;
+                break;
+            case "daily_sessions >= 5": conditionMet = stats.daily_sessions >= 5; break;
         }
         
         if (conditionMet) {
@@ -2284,6 +2740,7 @@ function checkAchievements(score, clientType, duration) {
         }
     });
     
+    // Добавляем новые достижения
     newAchievements.forEach(ach => {
         if (!userStats.achievementsUnlocked.includes(ach)) {
             userStats.achievementsUnlocked.push(ach);
@@ -2294,10 +2751,72 @@ function checkAchievements(score, clientType, duration) {
         }
     });
     
+    // Сохраняем обновлённую статистику
     if (newAchievements.length > 0) {
         auth.saveUserStats(userStats);
-        renderRecentAchievements();
+        
+        // Обновляем интерфейс достижений, если открыта соответствующая вкладка
+        if (document.getElementById('achievements-tab')?.classList.contains('active')) {
+            renderAchievementsTabContent();
+        }
     }
+}
+
+// ФУНКЦИЯ УВЕДОМЛЕНИЯ О ДОСТИЖЕНИИ
+function showAchievementNotification(achievement) {
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: white;
+        padding: 15px;
+        border-radius: 10px;
+        box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        z-index: 1001;
+        animation: slideIn 0.3s ease;
+        border-left: 4px solid var(--secondary-color);
+        min-width: 250px;
+        max-width: 300px;
+    `;
+    
+    notification.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+            <span style="font-size: 32px;">${achievement.icon}</span>
+            <div style="flex: 1;">
+                <div style="font-weight: 600; color: var(--primary-color); font-size: 16px;">🎉 Новое достижение!</div>
+                <div style="font-size: 14px; font-weight: 500; color: var(--text-primary);">${achievement.name}</div>
+            </div>
+        </div>
+        <div style="font-size: 13px; color: var(--text-secondary); line-height: 1.4;">${achievement.description}</div>
+        <div style="margin-top: 8px; font-size: 12px; color: var(--accent-color); font-weight: 500;">
+            <i class="fas fa-trophy"></i> Категория: ${achievement.category}
+        </div>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    // Добавляем анимацию
+    const style = document.createElement('style');
+    style.textContent = `
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes slideOut {
+            from { transform: translateX(0); opacity: 1; }
+            to { transform: translateX(100%); opacity: 0; }
+        }
+    `;
+    document.head.appendChild(style);
+    
+    setTimeout(() => {
+        notification.style.animation = 'slideOut 0.3s ease';
+        setTimeout(() => {
+            notification.remove();
+            style.remove();
+        }, 300);
+    }, 5000);
 }
 
 async function renderDynamicNews() {
@@ -2467,7 +2986,6 @@ async function handleRegister() {
     const result = await auth.register(username, group, password);
     if (result.success) {
         alert(result.message);
-        // ОЧИЩАЕМ КЭШ ПОСЛЕ РЕГИСТРАЦИИ
         auth.cache.clear();
         showLoginForm();
         document.getElementById('loginUsername').value = username;
@@ -2633,6 +3151,9 @@ function switchTab(tabName) {
             case 'progress':
                 renderProgressChart();
                 break;
+            case 'achievements':
+                renderAchievementsTabContent();
+                break;
             case 'leaderboard':
                 updateLeaderboard('all');
                 break;
@@ -2707,14 +3228,17 @@ async function updateProgressUI() {
 }
 
 async function updateRankPosition() {
-    if (!auth.currentUser) return;
+
+    if (!auth.currentUser || !auth.currentUser.id) {
+        const rankPosition = document.getElementById('rankPosition');
+        if (rankPosition) rankPosition.textContent = '-';
+        return;
+    }
     
     try {
         const verticalLeaderboard = await auth.getLeaderboard(auth.currentUser.group);
         
-        // Проверяем, что currentUser существует и имеет id
-        if (!auth.currentUser || !auth.currentUser.id) {
-            console.warn('Пользователь не загружен');
+        if (!verticalLeaderboard || verticalLeaderboard.length === 0) {
             const rankPosition = document.getElementById('rankPosition');
             if (rankPosition) rankPosition.textContent = '-';
             return;
@@ -2866,11 +3390,16 @@ async function updateLeaderboard(filter = 'all') {
             return;
         }
         
-        players.forEach((player, index) => {
-            const row = document.createElement('tr');
-            if (player.id === auth.currentUser?.id) {
-                row.className = 'player-you';
-            }
+players.forEach((player, index) => {
+    const username = player.username.toLowerCase();
+    if (['test', 'testf', 'testm', 'testo', 'tests', 'testa'].includes(username)) {
+        return; 
+    }
+    
+    const row = document.createElement('tr');
+    if (player.id === auth.currentUser?.id) {
+        row.className = 'player-you';
+    }
             
             let rankClass = '';
             let trophy = '';
@@ -2885,12 +3414,10 @@ async function updateLeaderboard(filter = 'all') {
                 trophy = '🥉';
             }
             
-            // Отображение аватара
             let avatarHTML = '';
             if (player.avatar_url && player.avatar_url.startsWith('data:image')) {
                 avatarHTML = `<img src="${player.avatar_url}" alt="${player.username}" class="leaderboard-avatar">`;
             } else {
-                // Иконка по умолчанию
                 const defaultColors = ['#667eea', '#764ba2', '#f093fb', '#4facfe', '#00f2fe', '#43e97b', '#38f9d7', '#fa709a'];
                 const colorIndex = player.username.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % defaultColors.length;
                 const initials = player.username.substring(0, 2).toUpperCase();
@@ -3116,850 +3643,252 @@ function resetChat() {
     if (chatControls) chatControls.style.display = 'none';
 }
 
-function loadTrainerInterface() {
-    const sidebar = document.getElementById('sidebar');
-    const contentWrapper = document.getElementById('contentWrapper');
+function renderRecentAchievements() {
+    const recentAchievements = document.getElementById('recentAchievements');
+    if (!recentAchievements) return;
     
-    if (!sidebar || !contentWrapper) return;
-    
-    sidebar.innerHTML = `
-        <a href="javascript:void(0);" onclick="switchTab('trainer_dashboard')" class="nav-item active" data-tab="trainer_dashboard">
-            <i class="fas fa-chalkboard-teacher"></i> Дашборд
-        </a>
-        <a href="javascript:void(0);" onclick="switchTab('trainer_students')" class="nav-item" data-tab="trainer_students">
-            <i class="fas fa-users"></i> Все ученики
-        </a>
-        <a href="javascript:void(0);" onclick="switchTab('trainer_sessions')" class="nav-item" data-tab="trainer_sessions">
-            <i class="fas fa-history"></i> Все тренировки
-        </a>
-        <a href="javascript:void(0);" onclick="switchTab('trainer_statistics')" class="nav-item" data-tab="trainer_statistics">
-            <i class="fas fa-chart-bar"></i> Статистика
-        </a>
-    `;
-    
-    contentWrapper.innerHTML = `
-        <div class="tab-content active" id="trainer_dashboard-tab">
-            <div class="welcome-section">
-                <div class="section-title">
-                    <i class="fas fa-chalkboard-teacher"></i>
-                    <span>Панель тренера</span>
-                </div>
-                <div id="trainerDashboardContent">
-                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
-                        Загрузка данных об участниках...
-                    </p>
-                </div>
-            </div>
-        </div>
-
-        <div class="tab-content" id="trainer_students-tab">
-            <div class="welcome-section">
-                <div class="section-title">
-                    <i class="fas fa-users"></i>
-                    <span>Все ученики</span>
-                </div>
-                
-                <div class="trainer-search-section">
-                    <input type="text" class="trainer-search-input" id="studentSearchInput" placeholder="Поиск по имени ученика..." oninput="searchStudents()">
-                    <input type="date" class="trainer-date-input" id="studentDateFrom" placeholder="Дата от">
-                    <input type="date" class="trainer-date-input" id="studentDateTo" placeholder="Дата до">
-                    <button class="trainer-search-btn" onclick="searchStudents()">
-                        <i class="fas fa-search"></i> Поиск
-                    </button>
-                </div>
-                
-                <div id="trainerStudentsContent">
-                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
-                        Загрузка списка учеников...
-                    </p>
-                </div>
-            </div>
-        </div>
-
-        <div class="tab-content" id="trainer_sessions-tab">
-            <div class="welcome-section">
-                <div class="section-title">
-                    <i class="fas fa-history"></i>
-                    <span>Все тренировки</span>
-                    <div style="margin-left: auto;">
-                        <select id="sessionFilter" onchange="filterSessions()" style="padding: 6px 12px; border-radius: 6px; border: 1px solid #ddd; font-size: 13px;">
-                            <option value="all">Все вертикали</option>
-                            <option value="Программа лояльности">Лояльность</option>
-                            <option value="ОПК">ОПК</option>
-                            <option value="Фудтех">Фудтех</option>
-                            <option value="Маркет">Маркет</option>
-                            <option value="Аптека">Аптека</option>
-                            <option value="Сборка">Сборка</option>
-                        </select>
-                    </div>
-                </div>
-                
-                <div class="trainer-search-section">
-                    <input type="text" class="trainer-search-input" id="sessionSearchInput" placeholder="Поиск по ученику или сценарию..." oninput="searchSessions()">
-                    <input type="date" class="trainer-date-input" id="sessionDateFrom" placeholder="Дата от">
-                    <input type="date" class="trainer-date-input" id="sessionDateTo" placeholder="Дата до">
-                    <select class="trainer-date-input" id="sessionScoreFilter" onchange="searchSessions()" style="min-width: 120px;">
-                        <option value="">Все оценки</option>
-                        <option value="5">5 звезд</option>
-                        <option value="4">4+ звезды</option>
-                        <option value="3">3+ звезды</option>
-                    </select>
-                    <button class="trainer-search-btn" onclick="searchSessions()">
-                        <i class="fas fa-search"></i> Поиск
-                    </button>
-                </div>
-                
-                <div id="trainerSessionsContent">
-                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
-                        Загрузка всех тренировок...
-                    </p>
-                </div>
-            </div>
-        </div>
-
-        <div class="tab-content" id="trainer_statistics-tab">
-            <div class="welcome-section">
-                <div class="section-title">
-                    <i class="fas fa-chart-bar"></i>
-                    <span>Статистика по системе</span>
-                </div>
-                <div id="trainerStatisticsContent">
-                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
-                        Загрузка статистики...
-                    </p>
-                </div>
-            </div>
-        </div>
-    `;
-    
-    loadTrainerDashboard();
-}
-
-async function loadTrainerDashboard() {
-    const dashboardContent = document.getElementById('trainerDashboardContent');
-    if (!dashboardContent) return;
-    
-    dashboardContent.innerHTML = '<p style="color: #666; margin-bottom: 15px; font-size: 14px;">Загрузка данных об участниках...</p>';
-    
-    try {
-        const students = await auth.getStudents();
-        const allSessions = await auth.getAllTrainingSessions({ vertical: 'all' });
-        
-        let html = `
-            <div class="stats-cards">
-                <div class="stat-card">
-                    <div class="value">${students.length}</div>
-                    <div class="label">Всего учеников</div>
-                </div>
-                <div class="stat-card">
-                    <div class="value">${allSessions?.length || 0}</div>
-                    <div class="label">Всего тренировок</div>
-                </div>
-            </div>
-            
-            <div class="section-title" style="margin-top: 25px;">
-                <i class="fas fa-history"></i>
-                <span>Последние тренировки</span>
-            </div>
-            
-            <div class="scrollable-container" style="max-height: 400px; overflow-y: auto; margin-top: 10px;">
-        `;
-        
-        if (allSessions?.length) {
-            allSessions.slice(0, 50).forEach(session => {
-                const student = students.find(s => s.id === session.user_id);
-                const clientType = clientTypes[session.client_type];
-                
-                html += `
-                    <div class="student-item">
-                        <div class="student-info">
-                            <div class="student-name">${student ? student.username : 'Неизвестный ученик'}</div>
-                            <div class="student-group">${session.vertical || 'Без вертикали'} • ${clientType ? clientType.name : session.client_type}</div>
-                            <div style="margin-top: 5px; font-size: 12px; color: #666;">${session.scenario || 'Тренировка'}</div>
-                        </div>
-                        <div class="student-stats">
-                            <div class="stat-badge">${session.score}/5</div>
-                            <div class="stat-badge">${formatDate(session.date)}</div>
-                        </div>
-                        <div class="trainer-actions">
-                            <button class="view-chat-btn-trainer" onclick="viewStudentChat('${session.user_id}', '${session.id}')">
-                                <i class="fas fa-comments"></i> Чат
-                            </button>
-                            <button class="comment-btn" onclick="openCommentModal('${session.user_id}', '${session.id}', '${student ? student.username : 'Неизвестный'}')">
-                                <i class="fas fa-comment"></i> Комментарий
-                            </button>
-                        </div>
-                    </div>
-                `;
-            });
-        } else {
-            html += '<div style="text-align: center; padding: 20px; color: #666;">Нет данных о тренировках</div>';
-        }
-        
-        html += `</div>`;
-        
-        dashboardContent.innerHTML = html;
-        
-    } catch (error) {
-        console.error('Ошибка загрузки дашборда:', error);
-        dashboardContent.innerHTML = '<p style="color: #dc3545;">Ошибка загрузки данных</p>';
+    if (!auth.currentUser) {
+        recentAchievements.innerHTML = '<div class="no-achievements">Нет данных</div>';
+        return;
     }
-}
-
-async function loadAllStudents() {
-    const studentsContent = document.getElementById('trainerStudentsContent');
-    if (!studentsContent) return;
     
-    studentsContent.innerHTML = '<p style="color: #666; margin-bottom: 15px; font-size: 14px;">Загрузка списка учеников...</p>';
+    const userAchievements = auth.currentUser.stats.achievementsUnlocked || [];
     
-    try {
-        const students = await auth.getStudents();
-        const allSessions = await auth.getAllTrainingSessions({ vertical: 'all' });
-        
-        let html = `
-            <div class="stats-cards">
-                <div class="stat-card">
-                    <div class="value">${students.length}</div>
-                    <div class="label">Всего учеников</div>
-                </div>
+    if (userAchievements.length === 0) {
+        recentAchievements.innerHTML = `
+            <div class="no-achievements">
+                <div class="no-achievements-icon">🏆</div>
+                <div class="no-achievements-text">У вас пока нет достижений</div>
+                <div class="no-achievements-subtext">Начните тренировки, чтобы заработать достижения!</div>
             </div>
-            
-            <div class="section-title" style="margin-top: 25px;">
-                <i class="fas fa-users"></i>
-                <span>Все ученики</span>
-            </div>
-            
-            <div class="scrollable-container" style="max-height: 500px; overflow-y: auto;">
         `;
-        
-        if (students.length > 0) {
-            const studentsByGroup = {};
-            students.forEach(student => {
-                const group = student.group_name || 'Без вертикали';
-                if (!studentsByGroup[group]) studentsByGroup[group] = [];
-                studentsByGroup[group].push(student);
-            });
-            
-            for (const [group, groupStudents] of Object.entries(studentsByGroup)) {
-                const groupId = `group_${group.replace(/\s+/g, '_')}`;
-                html += `
-                    <div class="vertical-group" id="${groupId}">
-                        <div class="vertical-header" onclick="toggleVerticalGroup('${groupId}')">
-                            <div>
-                                <i class="fas fa-building"></i>
-                                <span>${group}</span>
-                                <span class="vertical-count">${groupStudents.length}</span>
-                            </div>
-                            <div class="toggle-icon">▼</div>
-                        </div>
-                        <div class="vertical-content" id="${groupId}_content">
-                `;
-                
-                groupStudents.forEach(student => {
-                    const studentSessions = allSessions?.filter(s => s.user_id === student.id) || [];
-                    const totalScore = studentSessions.reduce((sum, s) => sum + (s.score || 0), 0);
-                    const avgScore = studentSessions.length > 0 ? (totalScore / studentSessions.length).toFixed(1) : '0.0';
-                    
-                    html += `
-                        <div class="student-item">
-                            <div class="student-info">
-                                <div class="student-name">${student.username}</div>
-                                <div class="student-group">${student.group_name || 'Без вертикали'}</div>
-                            </div>
-                            <div class="student-stats">
-                                <div class="stat-badge">${studentSessions.length} тренировок</div>
-                                <div class="stat-badge">Средний: ${avgScore}/5</div>
-                                <div class="stat-badge">Уровень: ${student.stats?.currentLevel || 1}</div>
-                            </div>
-                            <div class="trainer-actions">
-                                <button class="view-chat-btn-trainer" onclick="viewStudentSessions('${student.id}', '${student.username}')">
-                                    <i class="fas fa-history"></i> Тренировки
-                                </button>
-                            </div>
-                        </div>
-                    `;
-                });
-                
-                html += `
-                        </div>
-                    </div>
-                `;
-            }
-            
-            const firstGroup = Object.keys(studentsByGroup)[0];
-            if (firstGroup) {
-                setTimeout(() => toggleVerticalGroup(`group_${firstGroup.replace(/\s+/g, '_')}`, true), 100);
-            }
-        } else {
-            html += '<div style="text-align: center; padding: 20px; color: #666;">Нет учеников в системе</div>';
-        }
-        
-        html += `</div>`;
-        
-        studentsContent.innerHTML = html;
-        
-    } catch (error) {
-        console.error('Ошибка загрузки учеников:', error);
-        studentsContent.innerHTML = '<p style="color: #dc3545;">Ошибка загрузки данных</p>';
+        return;
     }
-}
-
-async function searchStudents() {
-    const searchInput = document.getElementById('studentSearchInput');
-    const dateFrom = document.getElementById('studentDateFrom');
-    const dateTo = document.getElementById('studentDateTo');
     
-    if (!searchInput) return;
+    let recentAchievementIds = [...userAchievements].reverse().slice(0, 3);
     
-    const searchTerm = searchInput.value.toLowerCase().trim();
+    recentAchievements.innerHTML = '<div class="recent-achievements-grid"></div>';
+    const grid = recentAchievements.querySelector('.recent-achievements-grid');
     
-    const studentsContent = document.getElementById('trainerStudentsContent');
-    if (!studentsContent) return;
-    
-    studentsContent.innerHTML = '<p style="color: #666; margin-bottom: 15px; font-size: 14px;">Поиск учеников...</p>';
-    
-    try {
-        const students = await auth.getStudents();
-        const allSessions = await auth.getAllTrainingSessions({ vertical: 'all' });
-        
-        let filteredStudents = students;
-        
-        if (searchTerm) {
-            filteredStudents = students.filter(student => 
-                student.username.toLowerCase().includes(searchTerm) ||
-                (student.group_name && student.group_name.toLowerCase().includes(searchTerm))
-            );
-        }
-        
-        if (dateFrom.value || dateTo.value) {
-            filteredStudents = filteredStudents.filter(student => {
-                if (!student.stats) return true;
-                
-                try {
-                    const stats = typeof student.stats === 'string' ? 
-                        JSON.parse(student.stats) : student.stats;
-                    
-                    if (!stats.registrationDate) return true;
-                    
-                    const regDate = new Date(stats.registrationDate);
-                    const fromDate = dateFrom.value ? new Date(dateFrom.value) : null;
-                    const toDate = dateTo.value ? new Date(dateTo.value) : null;
-                    
-                    if (fromDate && regDate < fromDate) return false;
-                    if (toDate && regDate > toDate) return false;
-                    
-                    return true;
-                } catch {
-                    return true;
-                }
-            });
-        }
-        
-        const studentsByGroup = {};
-        filteredStudents.forEach(student => {
-            const group = student.group_name || 'Без вертикали';
-            if (!studentsByGroup[group]) {
-                studentsByGroup[group] = [];
-            }
-            studentsByGroup[group].push(student);
-        });
-        
-        let html = `
-            <div class="stats-cards">
-                <div class="stat-card">
-                    <div class="value">${filteredStudents.length}</div>
-                    <div class="label">Найдено учеников</div>
+    recentAchievementIds.forEach(achievementId => {
+        const achievement = achievements.find(a => a.id === achievementId);
+        if (achievement) {
+            const badge = document.createElement('div');
+            badge.className = 'recent-badge';
+            badge.innerHTML = `
+                <div class="recent-badge-icon">${achievement.icon}</div>
+                <div class="recent-badge-info">
+                    <div class="recent-badge-name">${achievement.name}</div>
+                    <div class="recent-badge-desc">${achievement.description}</div>
                 </div>
-            </div>
-            
-            <div class="section-title" style="margin-top: 25px;">
-                <i class="fas fa-users"></i>
-                <span>Результаты поиска</span>
-                ${searchTerm ? `<span style="font-size: 12px; color: #666; margin-left: 10px;">По запросу: "${searchTerm}"</span>` : ''}
-            </div>
-            
-            <div class="scrollable-container" style="max-height: 500px; overflow-y: auto;">
-        `;
-        
-        if (filteredStudents.length > 0) {
-            for (const [group, groupStudents] of Object.entries(studentsByGroup)) {
-                const groupId = `group_${group.replace(/\s+/g, '_')}_search`;
-                html += `
-                    <div class="vertical-group" id="${groupId}">
-                        <div class="vertical-header" onclick="toggleVerticalGroup('${groupId}')">
-                            <div>
-                                <i class="fas fa-building"></i>
-                                <span>${group}</span>
-                                <span class="vertical-count">${groupStudents.length}</span>
-                            </div>
-                            <div class="toggle-icon">▼</div>
-                        </div>
-                        <div class="vertical-content" id="${groupId}_content">
-                `;
-                
-                groupStudents.forEach(student => {
-                    const studentSessions = allSessions?.filter(s => s.user_id === student.id) || [];
-                    const totalScore = studentSessions.reduce((sum, s) => sum + (s.score || 0), 0);
-                    const avgScore = studentSessions.length > 0 ? (totalScore / studentSessions.length).toFixed(1) : '0.0';
-                    
-                    html += `
-                        <div class="student-item">
-                            <div class="student-info">
-                                <div class="student-name">${student.username}</div>
-                                <div class="student-group">${student.group_name || 'Без вертикали'}</div>
-                            </div>
-                            <div class="student-stats">
-                                <div class="stat-badge">${studentSessions.length} тренировок</div>
-                                <div class="stat-badge">Средний: ${avgScore}/5</div>
-                                <div class="stat-badge">Уровень: ${student.stats?.currentLevel || 1}</div>
-                            </div>
-                            <div class="trainer-actions">
-                                <button class="view-chat-btn-trainer" onclick="viewStudentSessions('${student.id}', '${student.username}')">
-                                    <i class="fas fa-history"></i> Тренировки
-                                </button>
-                            </div>
-                        </div>
-                    `;
-                });
-                
-                html += `
-                        </div>
-                    </div>
-                `;
-            }
-        } else {
-            html += '<div style="text-align: center; padding: 20px; color: #666;">По вашему запросу ничего не найдено</div>';
+            `;
+            badge.title = achievement.description;
+            grid.appendChild(badge);
         }
-        
-        html += `</div>`;
-        
-        studentsContent.innerHTML = html;
-        
-    } catch (error) {
-        console.error('Ошибка поиска учеников:', error);
-        studentsContent.innerHTML = '<p style="color: #dc3545;">Ошибка поиска</p>';
-    }
-}
-
-async function searchSessions() {
-    const searchInput = document.getElementById('sessionSearchInput');
-    const dateFrom = document.getElementById('sessionDateFrom');
-    const dateTo = document.getElementById('sessionDateTo');
-    const scoreFilter = document.getElementById('sessionScoreFilter');
-    
-    if (!searchInput) return;
-    
-    const searchTerm = searchInput.value.toLowerCase().trim();
-    const minScore = scoreFilter.value ? parseInt(scoreFilter.value) : 0;
-    
-    const sessionsContent = document.getElementById('trainerSessionsContent');
-    if (!sessionsContent) return;
-    
-    sessionsContent.innerHTML = '<p style="color: #666; margin-bottom: 15px; font-size: 14px;">Поиск тренировок...</p>';
-    
-    try {
-        const students = await auth.getStudents();
-        let allSessions = await auth.getAllTrainingSessions({ vertical: 'all' });
-        
-        const filterSelect = document.getElementById('sessionFilter');
-        const filterValue = filterSelect ? filterSelect.value : 'all';
-        
-        if (filterValue !== 'all' && allSessions) {
-            allSessions = allSessions.filter(session => session.vertical === filterValue);
-        }
-        
-        let filteredSessions = allSessions || [];
-        
-        if (searchTerm) {
-            filteredSessions = filteredSessions.filter(session => {
-                const student = students.find(s => s.id === session.user_id);
-                const studentName = student ? student.username.toLowerCase() : '';
-                const scenario = session.scenario ? session.scenario.toLowerCase() : '';
-                const clientType = session.client_type ? session.client_type.toLowerCase() : '';
-                
-                return studentName.includes(searchTerm) || scenario.includes(searchTerm) || clientType.includes(searchTerm);
-            });
-        }
-        
-        if (dateFrom.value || dateTo.value) {
-            filteredSessions = filteredSessions.filter(session => {
-                if (!session.date) return false;
-                
-                const sessionDate = new Date(session.date);
-                const fromDate = dateFrom.value ? new Date(dateFrom.value) : null;
-                const toDate = dateTo.value ? new Date(dateTo.value) : null;
-                
-                if (fromDate && sessionDate < fromDate) return false;
-                if (toDate && sessionDate > toDate) return false;
-                return true;
-            });
-        }
-        
-        if (minScore > 0) {
-            filteredSessions = filteredSessions.filter(session => session.score && session.score >= minScore);
-        }
-        
-        let html = `
-            <div class="stats-cards">
-                <div class="stat-card">
-                    <div class="value">${filteredSessions.length}</div>
-                    <div class="label">Найдено тренировок</div>
-                </div>
-            </div>
-            
-            <div class="section-title" style="margin-top: 25px;">
-                <i class="fas fa-history"></i>
-                <span>Результаты поиска тренировок</span>
-                ${searchTerm ? `<span style="font-size: 12px; color: #666; margin-left: 10px;">По запросу: "${searchTerm}"</span>` : ''}
-            </div>
-            
-            <div class="scrollable-container" style="max-height: 600px; overflow-y: auto;">
-        `;
-        
-        if (filteredSessions.length > 0) {
-            const sessionsByDate = {};
-            filteredSessions.forEach(session => {
-                const date = new Date(session.date).toLocaleDateString('ru-RU');
-                if (!sessionsByDate[date]) sessionsByDate[date] = [];
-                sessionsByDate[date].push(session);
-            });
-            
-            for (const [date, dateSessions] of Object.entries(sessionsByDate)) {
-                const dateId = `date_${date.replace(/[\.\s]/g, '_')}`;
-                html += `
-                    <div class="vertical-group" id="${dateId}">
-                        <div class="vertical-header" onclick="toggleVerticalGroup('${dateId}')">
-                            <div>
-                                <i class="far fa-calendar"></i>
-                                <span>${date}</span>
-                                <span class="vertical-count">${dateSessions.length}</span>
-                            </div>
-                            <div class="toggle-icon">▼</div>
-                        </div>
-                        <div class="vertical-content" id="${dateId}_content">
-                `;
-                
-                dateSessions.forEach(session => {
-                    const student = students.find(s => s.id === session.user_id);
-                    const clientType = clientTypes[session.client_type];
-                    
-                    html += `
-                        <div class="student-item">
-                            <div class="student-info">
-                                <div class="student-name">${student ? student.username : 'Неизвестный ученик'}</div>
-                                <div class="student-group">${session.vertical || 'Без вертикали'} • ${clientType ? clientType.name : session.client_type}</div>
-                            </div>
-                            <div class="student-stats">
-                                <div class="stat-badge">${session.score}/5</div>
-                                <div class="stat-badge">${formatTime(session.date)}</div>
-                            </div>
-                            <div class="trainer-actions">
-                                <button class="view-chat-btn-trainer" onclick="viewStudentChat('${session.user_id}', '${session.id}')">
-                                    <i class="fas fa-comments"></i> Чат
-                                </button>
-                                <button class="comment-btn" onclick="openCommentModal('${session.user_id}', '${session.id}', '${student ? student.username : 'Неизвестный'}')">
-                                    <i class="fas fa-comment"></i> Комментарий
-                                </button>
-                            </div>
-                        </div>
-                    `;
-                });
-                
-                html += `
-                        </div>
-                    </div>
-                `;
-            }
-            
-            const firstDate = Object.keys(sessionsByDate)[0];
-            if (firstDate) {
-                const dateId = `date_${firstDate.replace(/[\.\s]/g, '_')}`;
-                setTimeout(() => toggleVerticalGroup(dateId, true), 100);
-            }
-        } else {
-            html += '<div style="text-align: center; padding: 20px; color: #666;">По вашему запросу ничего не найдено</div>';
-        }
-        
-        html += `</div>`;
-        
-        sessionsContent.innerHTML = html;
-        
-    } catch (error) {
-        console.error('Ошибка поиска тренировок:', error);
-        sessionsContent.innerHTML = '<p style="color: #dc3545;">Ошибка поиска</p>';
-    }
-}
-
-function formatTime(dateString) {
-    const date = new Date(dateString);
-    return date.toLocaleTimeString('ru-RU', {
-        hour: '2-digit',
-        minute: '2-digit'
     });
 }
 
-async function loadAllSessions() {
-    await searchSessions();
-}
+function showResultModal(title, scenario, icon, xpEarned, evaluation, duration, aiFeedback = "") {
+    const resultTitle = document.getElementById('resultTitle');
+    const resultChatContent = document.getElementById('resultChatContent');
+    const resultFeedbackContent = document.getElementById('resultFeedbackContent');
+    const resultModal = document.getElementById('resultModal');
 
-async function viewStudentSessions(studentId, studentName) {
-    try {
-        const sessions = await auth.supabaseRequest(`training_sessions?user_id=eq.${studentId}&order=date.desc`);
-        
-        let html = `
-            <div class="section-title">
-                <i class="fas fa-history"></i>
-                <span>Тренировки ученика: ${studentName}</span>
-            </div>
-            
-            <div class="scrollable-container" style="max-height: 500px; overflow-y: auto;">
-        `;
-        
-        if (sessions?.length) {
-            sessions.forEach(session => {
-                const clientType = clientTypes[session.client_type];
-                
-                html += `
-                    <div class="student-item">
-                        <div class="student-info">
-                            <div class="student-group">${session.vertical || 'Без вертикали'} • ${clientType ? clientType.name : session.client_type}</div>
-                            <div style="margin-top: 5px; font-size: 12px; color: #666;">${session.scenario || 'Тренировка'}</div>
-                        </div>
-                        <div class="student-stats">
-                            <div class="stat-badge">${session.score}/5</div>
-                            <div class="stat-badge">${formatDate(session.date)}</div>
-                        </div>
-                        <div class="trainer-actions">
-                            <button class="view-chat-btn-trainer" onclick="viewStudentChat('${studentId}', '${session.id}')">
-                                <i class="fas fa-comments"></i> Чат
-                            </button>
-                            <button class="comment-btn" onclick="openCommentModal('${studentId}', '${session.id}', '${studentName}')">
-                                <i class="fas fa-comment"></i> Комментарий
-                            </button>
-                        </div>
-                    </div>
-                `;
-            });
-        } else {
-            html += '<div style="text-align: center; padding: 20px; color: #666;">У ученика нет тренировок</div>';
-        }
-        
-        html += `</div>`;
-        
-        const tempContainer = document.createElement('div');
-        tempContainer.innerHTML = html;
-        
-        const chatModalTitle = document.getElementById('chatModalTitle');
-        const chatModalMessages = document.getElementById('chatModalMessages');
-        const chatModal = document.getElementById('chatModal');
-        
-        if (chatModalTitle) chatModalTitle.textContent = `Тренировки ученика: ${studentName}`;
-        if (chatModalMessages) {
-            chatModalMessages.innerHTML = '';
-            chatModalMessages.appendChild(tempContainer);
-        }
-        if (chatModal) chatModal.style.display = 'flex';
-        
-    } catch (error) {
-        console.error('Ошибка загрузки тренировок ученика:', error);
-        alert('Ошибка загрузки тренировок ученика');
-    }
-}
 
-async function viewStudentChat(studentId, sessionId) {
-    try {
-        const session = await auth.supabaseRequest(`training_sessions?id=eq.${sessionId}`);
-        if (!session?.length) return;
-        
-        const sessionData = session[0];
-        const student = await auth.supabaseRequest(`users?id=eq.${studentId}`);
-        const studentName = student?.[0] ? student[0].username : 'Студент';
-        const clientType = clientTypes[sessionData.client_type];
-        
-        const chatModalTitle = document.getElementById('chatModalTitle');
-        const chatModalClientType = document.getElementById('chatModalClientType');
-        const chatModalDate = document.getElementById('chatModalDate');
-        const chatModalScore = document.getElementById('chatModalScore');
-        const messagesContainer = document.getElementById('chatModalMessages');
-        const chatModal = document.getElementById('chatModal');
-        
-        if (chatModalTitle) chatModalTitle.textContent = `Диалог: ${studentName}`;
-        if (chatModalClientType) chatModalClientType.textContent = clientType ? clientType.name : sessionData.client_type || '-';
-        if (chatModalDate) chatModalDate.textContent = formatDate(sessionData.date);
-        if (chatModalScore) chatModalScore.textContent = sessionData.score || 0;
-        if (messagesContainer) messagesContainer.innerHTML = '';
-        
-        let messages = [];
-        if (sessionData.messages && Array.isArray(sessionData.messages)) {
-            messages = sessionData.messages;
-        } else if (typeof sessionData.messages === 'string') {
-            try {
-                messages = JSON.parse(sessionData.messages);
-            } catch (e) {
-                console.error('Ошибка парсинга сообщений:', e);
+    let finalScore = evaluation.score;
+    
+
+    if (aiFeedback) {
+        const scoreMatch = aiFeedback.match(/(\d+)[\s]*[\/из\s]*5/i);
+        if (scoreMatch && scoreMatch[1]) {
+            const aiScore = parseInt(scoreMatch[1]);
+
+            if (aiScore >= 1 && aiScore <= 5) {
+                finalScore = aiScore;
             }
         }
-        
-        if (messages.length > 0 && messagesContainer) {
-            messages.forEach(msg => {
-                const messageDiv = document.createElement('div');
-                messageDiv.className = `message ${msg.sender === 'user' ? 'user' : 'ai'}`;
-                messageDiv.textContent = msg.text;
-                messagesContainer.appendChild(messageDiv);
-            });
-        } else if (messagesContainer) {
-            messagesContainer.innerHTML = '<div style="text-align: center; color: #666; padding: 20px;">Нет данных о диалоге</div>';
-        }
-        
-        if (sessionData.ai_feedback?.trim() && messagesContainer) {
-            const aiFeedbackContainer = document.createElement('div');
-            aiFeedbackContainer.style.cssText = 'margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;';
-            aiFeedbackContainer.innerHTML = `
-                <div style="font-weight: 600; margin-bottom: 10px; color: #333;">Обратная связь от DeepSeek:</div>
-                <div style="background: white; padding: 15px; border-radius: 6px; border: 1px solid #e9ecef; font-size: 13px; line-height: 1.6; white-space: pre-wrap; max-height: 400px; overflow-y: auto;">${sessionData.ai_feedback}</div>
-            `;
-            messagesContainer.appendChild(aiFeedbackContainer);
-        }
-        
-        if (sessionData.trainer_comments?.length && messagesContainer) {
-            const commentsContainer = document.createElement('div');
-            commentsContainer.style.cssText = 'margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;';
-            commentsContainer.innerHTML = '<div style="font-weight: 600; margin-bottom: 10px; color: #333;">Комментарии тренера:</div>';
-            
-            sessionData.trainer_comments.forEach(comment => {
-                const commentDiv = document.createElement('div');
-                commentDiv.className = 'trainer-comment';
-                commentDiv.innerHTML = `
-                    <div class="comment-header">
-                        <span>${comment.trainer}</span>
-                        <span>${formatDate(comment.date)}</span>
-                    </div>
-                    <div class="comment-text">${comment.comment}</div>
-                `;
-                commentsContainer.appendChild(commentDiv);
-            });
-            
-            messagesContainer.appendChild(commentsContainer);
-        }
-        
-        if (messagesContainer) {
-            const commentButton = document.createElement('button');
-            commentButton.className = 'btn btn-primary';
-            commentButton.style.cssText = 'margin-top: 15px; align-self: center;';
-            commentButton.innerHTML = '<i class="fas fa-comment"></i> Добавить комментарий';
-            commentButton.onclick = () => openCommentModal(studentId, sessionId, studentName);
-            messagesContainer.appendChild(commentButton);
-        }
-        
-        if (chatModal) chatModal.style.display = 'flex';
-        
-    } catch (error) {
-        console.error('Ошибка загрузки чата:', error);
-        alert('Ошибка загрузки диалога');
     }
-}
+    
+    if (resultTitle) resultTitle.textContent = title;
+    
+    // Очищаем содержимое
+    if (resultChatContent) resultChatContent.innerHTML = '';
+    if (resultFeedbackContent) resultFeedbackContent.innerHTML = '';
+    
+    // Заполняем левую колонку (чат)
+    if (resultChatContent && chatMessages && chatMessages.length > 0) {
+        let chatHTML = '<div style="padding: 20px;">';
+        
 
-function openCommentModal(studentId, sessionId, studentName) {
-    selectedStudentForComment = studentId;
-    selectedSessionForComment = sessionId;
-    
-    const commentModalTitle = document.getElementById('commentModalTitle');
-    const commentModalStudentInfo = document.getElementById('commentModalStudentInfo');
-    const commentModal = document.getElementById('commentModal');
-    
-    if (commentModalTitle) commentModalTitle.textContent = `Комментарий для: ${studentName}`;
-    if (commentModalStudentInfo) commentModalStudentInfo.textContent = `Сессия: ${sessionId}`;
-    
-    const commentText = document.getElementById('commentText');
-    if (commentText) commentText.value = '';
-    
-    loadExistingComments(sessionId);
-    
-    if (commentModal) commentModal.style.display = 'flex';
-}
-
-async function loadExistingComments(sessionId) {
-    const existingComments = document.getElementById('existingComments');
-    if (!existingComments) return;
-    
-    existingComments.innerHTML = '<div style="color: #666; font-size: 13px; margin-bottom: 10px;">Загрузка комментариев...</div>';
-    
-    try {
-        const session = await auth.supabaseRequest(`training_sessions?id=eq.${sessionId}`);
-        if (!session?.length) return;
+        chatHTML += `
+            <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                <div style="text-align: center; margin-bottom: 10px;">
+                    <div style="font-size: 32px; font-weight: bold; color: #155d27;">${finalScore}/5</div>
+                    <div style="color: #10a37f; font-weight: 600; font-size: 18px;">+${xpEarned} XP</div>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #ddd;">
+                    <span>Сценарий:</span>
+                    <span><strong>${scenario}</strong></span>
+                </div>
+<div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #ddd;">
+    <span>Тип клиента:</span>
+    <span>
+        ${lastChatSessionData && lastChatSessionData.clientType ? 
+            (lastChatSessionData.scenario && lastChatSessionData.scenario.includes('Случайный') ? 
+                'Случайный (' + (clientTypes[lastChatSessionData.clientType]?.name || lastChatSessionData.clientType) + ')' : 
+                (clientTypes[lastChatSessionData.clientType]?.name || lastChatSessionData.clientType)) 
+            : 'Не указан'}
+    </span>
+</div>
+                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #ddd;">
+                    <span>Вертикаль:</span>
+                    <span>${auth.currentUser?.group || ''}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: 8px 0;">
+                    <span>Время:</span>
+                    <span>${formatDuration(duration)}</span>
+                </div>
+            </div>
+            <div style="font-weight: 600; margin: 20px 0 10px 0; color: #333;">
+                <i class="fas fa-comments"></i> История диалога:
+            </div>
+        `;
         
-        const comments = session[0].trainer_comments || [];
-        
-        if (comments.length === 0) {
-            existingComments.innerHTML = '<div style="color: #666; font-size: 13px; margin-bottom: 10px;">Комментариев пока нет</div>';
-            return;
-        }
-        
-        let html = '<div style="margin-bottom: 15px;"><strong>Существующие комментарии:</strong></div>';
-        comments.forEach(comment => {
-            html += `
-                <div class="trainer-comment" style="margin-bottom: 10px;">
-                    <div class="comment-header">
-                        <span>${comment.trainer}</span>
-                        <span>${formatDate(comment.date)}</span>
+        // Сообщения чата
+        chatMessages.forEach(msg => {
+            const isAI = msg.sender === 'ai';
+            chatHTML += `
+                <div style="margin-bottom: 15px;">
+                    <div style="font-size: 12px; font-weight: 600; margin-bottom: 4px; color: ${isAI ? '#155d27' : '#1e88e5'};">
+                        ${isAI ? 'Клиент (AI)' : 'Вы (Оператор)'}
                     </div>
-                    <div class="comment-text">${comment.comment}</div>
+                    <div style="padding: 10px; border-radius: 8px; background: ${isAI ? '#e8f5e9' : '#e3f2fd'}; border-left: 3px solid ${isAI ? '#4caf50' : '#2196f3'};">
+                        ${msg.text}
+                    </div>
                 </div>
             `;
         });
         
-        existingComments.innerHTML = html;
-    } catch (error) {
-        console.error('Ошибка загрузки комментариев:', error);
-        existingComments.innerHTML = '<div style="color: #dc3545; font-size: 13px;">Ошибка загрузки комментариев</div>';
-    }
-}
-
-async function submitComment() {
-    const commentText = document.getElementById('commentText');
-    if (!commentText) return;
-    
-    const comment = commentText.value.trim();
-    
-    if (!comment) {
-        alert('Введите текст комментария');
-        return;
+        chatHTML += '</div>';
+        resultChatContent.innerHTML = chatHTML;
     }
     
-    if (!selectedStudentForComment || !selectedSessionForComment) {
-        alert('Ошибка: не выбрана сессия для комментария');
-        return;
-    }
-    
-    try {
-        const success = await auth.addTrainerComment(selectedSessionForComment, comment);
+    // Заполняем правую колонку (обратная связь)
+    if (resultFeedbackContent) {
+        let feedbackHTML = '<div style="padding: 20px;">';
         
-        if (success) {
-            alert('Комментарий успешно добавлен!');
-            closeCommentModal();
-            
-            const chatModal = document.getElementById('chatModal');
-            if (chatModal && chatModal.style.display === 'flex') {
-                viewStudentChat(selectedStudentForComment, selectedSessionForComment);
-            }
-        } else {
-            alert('Ошибка при добавлении комментария');
+        // Обратная связь от AI
+        if (aiFeedback && aiFeedback.trim().length > 0) {
+            feedbackHTML += `
+                <div style="margin-bottom: 20px;">
+                    <div style="font-weight: 600; margin-bottom: 10px; color: #155d27;">
+                        <i class="fas fa-robot"></i> Обратная связь от DeepSeek AI
+                    </div>
+                    <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid #ddd; font-size: 14px; line-height: 1.6; white-space: pre-wrap;">
+                        ${aiFeedback}
+                    </div>
+                </div>
+            `;
         }
-    } catch (error) {
-        console.error('Ошибка добавления комментария:', error);
-        alert('Ошибка при добавлении комментария');
+        
+        
+        feedbackHTML += `
+            <div style="margin-top: 20px;">
+                <button class="btn btn-primary" onclick="downloadChatAsPDF()" style="width: 100%; padding: 12px;">
+                    <i class="fas fa-download"></i> Скачать диалог в PDF
+                </button>
+            </div>
+        `;
+        
+        feedbackHTML += '</div>';
+        resultFeedbackContent.innerHTML = feedbackHTML;
     }
+    
+    if (resultModal) resultModal.style.display = 'flex';
 }
 
-function closeCommentModal() {
-    const commentModal = document.getElementById('commentModal');
-    if (commentModal) commentModal.style.display = 'none';
-    selectedStudentForComment = null;
-    selectedSessionForComment = null;
+function downloadChatAsPDF() {
+    if (!chatMessages || chatMessages.length === 0) {
+        alert('Нет данных диалога для скачивания');
+        return;
+    }
+    
+    const printWindow = window.open('', '_blank');
+    const html = `
+        <html>
+        <head>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 20px; }
+                .header { text-align: center; margin-bottom: 30px; }
+                .title { color: #155d27; font-size: 24px; }
+                .subtitle { color: #666; font-size: 14px; }
+                table { width: 100%; border-collapse: collapse; margin-bottom: 25px; }
+                td { padding: 8px 12px; border: 1px solid #ddd; }
+                .chat-title { background: #155d27; color: white; padding: 10px; margin-bottom: 15px; }
+                .message { margin-bottom: 15px; }
+                .ai-message { background: #f0f9f0; padding: 10px; border-left: 4px solid #4caf50; }
+                .user-message { background: #f0f8ff; padding: 10px; border-left: 4px solid #2196f3; text-align: right; }
+                .sender { font-weight: bold; margin-bottom: 5px; }
+                .footer { margin-top: 40px; text-align: center; font-size: 12px; color: #666; }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <div class="title">Отчет по тренировочному диалогу</div>
+                <div class="subtitle">Диалоговый тренажер AI | ${new Date().toLocaleDateString('ru-RU')}</div>
+            </div>
+            
+            <table>
+                <tr><td><strong>Сотрудник:</strong></td><td>${auth.currentUser?.username || ''}</td></tr>
+                <tr><td><strong>Вертикаль:</strong></td><td>${auth.currentUser?.group || ''}</td></tr>
+                <tr><td><strong>Тип клиента:</strong></td><td>${
+    lastChatSessionData && lastChatSessionData.clientType ? 
+        (lastChatSessionData.scenario && lastChatSessionData.scenario.includes('Случайный') ? 
+            'Случайный (' + (clientTypes[lastChatSessionData.clientType]?.name || lastChatSessionData.clientType) + ')' : 
+            (clientTypes[lastChatSessionData.clientType]?.name || lastChatSessionData.clientType)) 
+        : 'Не указан'
+}</td></tr>
+                <tr><td><strong>Оценка:</strong></td><td>${lastChatSessionData?.score || '0'}/5</td></tr>
+                <tr><td><strong>Дата:</strong></td><td>${formatDate(lastChatSessionData?.date || '')}</td></tr>
+            </table>
+            
+            <div class="chat-title">Полный диалог</div>
+            ${chatMessages.map(msg => `
+                <div class="message ${msg.sender === 'ai' ? 'ai-message' : 'user-message'}">
+                    <div class="sender">${msg.sender === 'ai' ? 'Клиент' : 'Оператор'}</div>
+                    <div>${msg.text}</div>
+                </div>
+            `).join('')}
+            
+            ${lastAIFeedback ? `
+            <div style="margin-top: 30px; padding: 15px; background: #f8f9fa;">
+                <strong>Обратная связь от AI:</strong><br>
+                ${lastAIFeedback}
+            </div>
+            ` : ''}
+            
+            <div class="footer">
+                © ${new Date().getFullYear()} Dialog.AI Trainer | Magnit-OMNI
+            </div>
+        </body>
+        </html>
+    `;
+    
+    printWindow.document.write(html);
+    printWindow.document.close();
+    
+    setTimeout(() => {
+        printWindow.print();
+    }, 500);
 }
 
-function filterSessions() {
-    loadAllSessions();
+function viewLastChatSession() {
+    if (lastChatSessionData) {
+        viewChatHistory(lastChatSessionData);
+        closeResultModal();
+    } else {
+        alert('Нет данных о последнем чате');
+    }
 }
 
 function viewChatHistory(session) {
@@ -4049,9 +3978,14 @@ function viewChatHistory(session) {
     if (chatModal) chatModal.style.display = 'flex';
 }
 
-function closeChatModal() {
-    const chatModal = document.getElementById('chatModal');
-    if (chatModal) chatModal.style.display = 'none';
+function closeResultModal() {
+    const resultModal = document.getElementById('resultModal');
+    const aiFeedbackContainer = document.getElementById('aiFeedbackContainer');
+    
+    if (resultModal) resultModal.style.display = 'none';
+    if (aiFeedbackContainer) aiFeedbackContainer.style.display = 'none';
+    
+    loadDemoChat();
 }
 
 function formatDate(dateString) {
@@ -4070,99 +4004,30 @@ function formatDuration(seconds) {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
-function showResultModal(title, scenario, icon, xpEarned, evaluation, duration, aiFeedback = "") {
-    const resultTitle = document.getElementById('resultTitle');
-    const resultIcon = document.getElementById('resultIcon');
-    const resultXP = document.getElementById('resultXP');
-    const resultDetails = document.getElementById('resultDetails');
-    const aiFeedbackContainer = document.getElementById('aiFeedbackContainer');
-    const aiFeedbackContent = document.getElementById('aiFeedbackContent');
-    const resultModal = document.getElementById('resultModal');
-    
-    if (resultTitle) resultTitle.textContent = title;
-    if (resultIcon) resultIcon.textContent = icon;
-    if (resultXP) resultXP.textContent = `+${xpEarned} XP`;
-    
-    let details = `<div style="margin-bottom: 10px;"><strong>Сценарий:</strong> ${scenario}</div>`;
-    
-    if (evaluation) {
-        details += `<div style="margin-bottom: 5px;"><strong>Оценка:</strong> ${evaluation.score}/5</div>`;
-        details += `<div style="margin-bottom: 5px;"><strong>Время:</strong> ${formatDuration(duration)}</div>`;
-        details += `<div style="margin-bottom: 5px;"><strong>Обратная связь:</strong> ${evaluation.feedback}</div>`;
+function setupLeaderboardTabs() {
+    const tabs = document.querySelectorAll('.leaderboard-tab');
+    tabs.forEach(tab => {
+        tab.addEventListener('click', function() {
+            tabs.forEach(t => t.classList.remove('active'));
+            this.classList.add('active');
+            const filter = this.dataset.filter;
+            updateLeaderboard(filter);
+        });
+    });
+}
+
+setInterval(() => {
+    if (auth.currentUser && !auth.isTrainer()) {
+        const now = new Date();
+        const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0);
         
-        if (evaluation.criteria) {
-            details += `<div style="margin-top: 10px; font-size: 12px; color: #666;">`;
-            details += `<div>✓ Сообщений: ${evaluation.criteria.messageCount}</div>`;
-            details += `<div>✓ Профессиональных фраз: ${evaluation.criteria.professionalPhrases}</div>`;
-            details += `<div>✓ Корректное завершение: ${evaluation.criteria.properEnding ? 'Да' : 'Можно лучше'}</div>`;
-            details += `</div>`;
+        if (now >= tomorrow) {
+            checkAndResetDailyLimit();
+            updateDailyLimitNotification();
         }
     }
-    
-    if (resultDetails) resultDetails.innerHTML = details;
-    
-    if (aiFeedback && aiFeedback.trim().length > 0) {
-        if (aiFeedbackContent) aiFeedbackContent.textContent = aiFeedback;
-        if (aiFeedbackContainer) {
-            aiFeedbackContainer.style.display = 'block';
-            if (aiFeedbackContent) {
-                aiFeedbackContent.style.maxHeight = '400px';
-                aiFeedbackContent.style.overflowY = 'auto';
-            }
-        }
-    } else if (aiFeedbackContainer) {
-        aiFeedbackContainer.style.display = 'none';
-    }
-    
-    if (resultModal) resultModal.style.display = 'flex';
-}
+}, 60000);
 
-function showAchievementNotification(achievement) {
-    const notification = document.createElement('div');
-    notification.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background: white;
-        padding: 15px;
-        border-radius: 10px;
-        box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-        z-index: 1001;
-        animation: slideIn 0.3s ease;
-        border-left: 4px solid #10a37f;
-        min-width: 250px;
-    `;
-    
-    notification.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
-            <span style="font-size: 24px;">${achievement.icon}</span>
-            <div>
-                <div style="font-weight: 600; color: #333;">🎉 Новое достижение!</div>
-                <div style="font-size: 12px; color: #666;">${achievement.name}</div>
-            </div>
-        </div>
-        <div style="font-size: 13px; color: #555;">${achievement.description}</div>
-    `;
-    
-    document.body.appendChild(notification);
-    
-    setTimeout(() => {
-        notification.style.animation = 'slideOut 0.3s ease';
-        setTimeout(() => notification.remove(), 300);
-    }, 3000);
-}
-
-function closeResultModal() {
-    const resultModal = document.getElementById('resultModal');
-    const aiFeedbackContainer = document.getElementById('aiFeedbackContainer');
-    
-    if (resultModal) resultModal.style.display = 'none';
-    if (aiFeedbackContainer) aiFeedbackContainer.style.display = 'none';
-    
-    loadDemoChat();
-}
-
-// Функции для работы с аватаром
 function openAvatarModal() {
     const modal = document.getElementById('avatarModal');
     const avatarPreview = document.getElementById('avatarPreview');
@@ -4253,383 +4118,88 @@ async function handleAvatarUpload(event) {
     reader.readAsDataURL(file);
 }
 
-const style = document.createElement('style');
-style.textContent = `
-    @keyframes slideIn {
-        from { transform: translateX(100%); opacity: 0; }
-        to { transform: translateX(0); opacity: 1; }
-    }
-    
-    @keyframes slideOut {
-        from { transform: translateX(0); opacity: 1; }
-        to { transform: translateX(100%); opacity: 0; }
-    }
-    
-    .toggle-icon {
-        transition: transform 0.3s;
-    }
-    
-    .toggle-icon.expanded {
-        transform: rotate(180deg);
-    }
-    
-    .vertical-content {
-        max-height: 0;
-        overflow: hidden;
-        transition: max-height 0.3s ease-out;
-    }
-    
-    .vertical-content.expanded {
-        max-height: 1000px;
-        transition: max-height 0.5s ease-in;
-    }
-    
-    .profile-stats {
-        display: flex;
-        gap: 10px;
-        margin-top: 10px;
-        flex-wrap: wrap;
-    }
-    
-    .profile-avatar-container {
-        text-align: center;
-    }
-    
-    .profile-avatar {
-        width: 100px;
-        height: 100px;
-        background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
-        border-radius: var(--radius-xl);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 40px;
-        color: white;
-        box-shadow: var(--shadow-lg);
-        overflow: hidden;
-        position: relative;
-    }
-    
-    .profile-avatar img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-        border-radius: var(--radius-xl);
-    }
-    
-    .leaderboard-player {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-    }
-    
-    .leaderboard-avatar-container {
-        width: 36px;
-        height: 36px;
-        border-radius: 50%;
-        background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: white;
-        font-size: 16px;
-        overflow: hidden;
-    }
-    
-    .leaderboard-avatar {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-        border-radius: 50%;
-    }
-    
-    .rank {
-        position: relative;
-        font-weight: 700;
-        width: 50px;
-        text-align: center;
-    }
-    
-    .rank-1 .trophy {
-        color: #ffd700;
-        font-size: 20px;
-        display: inline-block;
-        animation: trophyGlow 2s infinite;
-    }
-    
-    .rank-2 .trophy {
-        color: #c0c0c0;
-        font-size: 18px;
-        display: inline-block;
-    }
-    
-    .rank-3 .trophy {
-        color: #cd7f32;
-        font-size: 16px;
-        display: inline-block;
-    }
-    
-    @keyframes trophyGlow {
-        0%, 100% {
-            text-shadow: 0 0 5px rgba(255, 215, 0, 0.5);
-        }
-        50% {
-            text-shadow: 0 0 20px rgba(255, 215, 0, 0.8), 0 0 30px rgba(255, 215, 0, 0.6);
-        }
-    }
-    
-    .training-container {
-        display: grid;
-        grid-template-columns: 1fr 1.5fr;
-        gap: 24px;
-        margin-top: 24px;
-        transition: all 0.5s ease;
-    }
-    
-    .chat-expanded {
-        animation: expandChat 0.5s ease;
-    }
-    
-    @keyframes expandChat {
-        from {
-            transform: scale(0.95);
-            opacity: 0.8;
-        }
-        to {
-            transform: scale(1);
-            opacity: 1;
-        }
-    }
-    
-    .avatar-preview-container {
-        display: flex;
-        justify-content: center;
-        margin: 20px 0;
-    }
-    
-    .avatar-preview {
-        width: 120px;
-        height: 120px;
-        border-radius: 50%;
-        background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 48px;
-        color: white;
-        overflow: hidden;
-        border: 4px solid white;
-        box-shadow: var(--shadow-lg);
-    }
-    
-    .avatar-preview img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-        border-radius: 50%;
-    }
-    
-    .help-text {
-        font-size: 12px;
-        color: #666;
-        margin-top: 5px;
-    }
-    
-    .file-upload-section {
-        margin-top: 20px;
-        padding: 15px;
-        background: var(--bg-surface);
-        border-radius: var(--radius-md);
-        border: 2px dashed var(--border-color);
-        text-align: center;
-    }
-    
-    .file-upload-btn {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 12px 20px;
-        background: var(--primary-color);
-        color: white;
-        border: none;
-        border-radius: var(--radius-md);
-        cursor: pointer;
-        font-size: 14px;
-        font-weight: 500;
-        transition: all var(--transition-fast);
-        margin: 0 auto 10px;
-    }
-    
-    .file-upload-btn:hover {
-        background: var(--primary-dark);
-        transform: translateY(-1px);
-    }
-    
-    .file-info {
-        font-size: 12px;
-        color: var(--text-secondary);
-        margin-top: 5px;
-    }
-    
-    .news-container {
-        position: relative;
-    }
-    
-    .news-scroll-container {
-        overflow-x: auto;
-        white-space: nowrap;
-        padding: 10px 0;
-        scrollbar-width: thin;
-        scrollbar-color: var(--primary-color) var(--bg-surface);
-    }
-    
-    .news-scroll-container::-webkit-scrollbar {
-        height: 8px;
-    }
-    
-    .news-scroll-container::-webkit-scrollbar-track {
-        background: var(--bg-surface);
-        border-radius: 4px;
-    }
-    
-    .news-scroll-container::-webkit-scrollbar-thumb {
-        background: var(--primary-color);
-        border-radius: 4px;
-    }
-    
-    .news-grid {
-        display: inline-flex;
-        gap: 15px;
-    }
-    
-    .news-item {
-        flex: 0 0 auto;
-        width: 300px;
-        white-space: normal;
-    }
-    
-    .scroll-indicator {
-        display: flex;
-        justify-content: space-between;
-        margin-top: 10px;
-    }
-    
-    .scroll-arrow {
-        width: 36px;
-        height: 36px;
-        background: var(--bg-card);
-        border: 1px solid var(--border-color);
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        transition: all var(--transition-fast);
-        color: var(--text-secondary);
-    }
-    
-    .scroll-arrow:hover {
-        background: var(--primary-color);
-        color: white;
-        border-color: var(--primary-color);
-        transform: scale(1.1);
-    }
-    
-    .scroll-arrow.left {
-        transform: rotate(90deg);
-    }
-    
-    .scroll-arrow.right {
-        transform: rotate(-90deg);
-    }
-    
-    .scroll-arrow.left:hover {
-        transform: rotate(90deg) scale(1.1);
-    }
-    
-    .scroll-arrow.right:hover {
-        transform: rotate(-90deg) scale(1.1);
-    }
-    
-    .chat-controls {
-        text-align: center;
-        margin-top: 10px;
-    }
-`;
-document.head.appendChild(style);
-
-function setupLeaderboardTabs() {
-    const tabs = document.querySelectorAll('.leaderboard-tab');
-    tabs.forEach(tab => {
-        tab.addEventListener('click', function() {
-            tabs.forEach(t => t.classList.remove('active'));
-            this.classList.add('active');
-            const filter = this.dataset.filter;
-            updateLeaderboard(filter);
-        });
-    });
+function closeChatModal() {
+    const chatModal = document.getElementById('chatModal');
+    if (chatModal) chatModal.style.display = 'none';
 }
 
-function toggleVerticalGroup(groupId, forceOpen = false) {
-    const content = document.getElementById(`${groupId}_content`);
-    const icon = document.querySelector(`#${groupId} .toggle-icon`);
+// Тренерские функции (упрощённые для краткости)
+function loadTrainerInterface() {
+    const sidebar = document.getElementById('sidebar');
+    const contentWrapper = document.getElementById('contentWrapper');
     
-    if (!content || !icon) return;
+    if (!sidebar || !contentWrapper) return;
     
-    if (forceOpen || content.classList.contains('expanded')) {
-        content.classList.remove('expanded');
-        icon.classList.remove('expanded');
-    } else {
-        content.classList.add('expanded');
-        icon.classList.add('expanded');
-    }
+    sidebar.innerHTML = `
+        <a href="javascript:void(0);" onclick="switchTab('trainer_dashboard')" class="nav-item active" data-tab="trainer_dashboard">
+            <i class="fas fa-chalkboard-teacher"></i> Дашборд
+        </a>
+        <a href="javascript:void(0);" onclick="switchTab('trainer_students')" class="nav-item" data-tab="trainer_students">
+            <i class="fas fa-users"></i> Все ученики
+        </a>
+        <a href="javascript:void(0);" onclick="switchTab('trainer_sessions')" class="nav-item" data-tab="trainer_sessions">
+            <i class="fas fa-history"></i> Все тренировки
+        </a>
+    `;
+    
+    contentWrapper.innerHTML = `
+        <div class="tab-content active" id="trainer_dashboard-tab">
+            <div class="welcome-section">
+                <div class="section-title">
+                    <i class="fas fa-chalkboard-teacher"></i>
+                    <span>Панель тренера</span>
+                </div>
+                <div id="trainerDashboardContent">
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Загрузка данных об участниках...
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-content" id="trainer_students-tab">
+            <div class="welcome-section">
+                <div class="section-title">
+                    <i class="fas fa-users"></i>
+                    <span>Все ученики</span>
+                </div>
+                
+                <div id="trainerStudentsContent">
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Загрузка списка учеников...
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-content" id="trainer_sessions-tab">
+            <div class="welcome-section">
+                <div class="section-title">
+                    <i class="fas fa-history"></i>
+                    <span>Все тренировки</span>
+                </div>
+                
+                <div id="trainerSessionsContent">
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">
+                        Загрузка всех тренировок...
+                    </p>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    loadTrainerDashboard();
 }
 
-setInterval(() => {
-    if (auth.currentUser && !auth.isTrainer()) {
-        const now = new Date();
-        const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0);
-        
-        if (now >= tomorrow) {
-            checkAndResetDailyLimit();
-            updateDailyLimitNotification();
-        }
-    }
-}, 60000);
-
-async function loadTrainerStatistics() {
-    const statisticsContent = document.getElementById('trainerStatisticsContent');
-    if (!statisticsContent) return;
+async function loadTrainerDashboard() {
+    const dashboardContent = document.getElementById('trainerDashboardContent');
+    if (!dashboardContent) return;
     
-    statisticsContent.innerHTML = '<p style="color: #666; margin-bottom: 15px; font-size: 14px;">Загрузка статистики...</p>';
+    dashboardContent.innerHTML = '<p style="color: #666; margin-bottom: 15px; font-size: 14px;">Загрузка данных...</p>';
     
     try {
         const students = await auth.getStudents();
         const allSessions = await auth.getAllTrainingSessions({ vertical: 'all' });
-        
-        const statsByVertical = {};
-        const studentsByVertical = {};
-        
-        students.forEach(student => {
-            const vertical = student.group_name || 'Без вертикали';
-            if (!statsByVertical[vertical]) {
-                statsByVertical[vertical] = { sessions: 0, totalScore: 0, students: 0 };
-            }
-            if (!studentsByVertical[vertical]) {
-                studentsByVertical[vertical] = new Set();
-            }
-            studentsByVertical[vertical].add(student.id);
-        });
-        
-        if (allSessions) {
-            allSessions.forEach(session => {
-                const vertical = session.vertical || 'Без вертикали';
-                if (statsByVertical[vertical]) {
-                    statsByVertical[vertical].sessions++;
-                    statsByVertical[vertical].totalScore += session.score || 0;
-                }
-            });
-        }
         
         let html = `
             <div class="stats-cards">
@@ -4644,37 +4214,154 @@ async function loadTrainerStatistics() {
             </div>
             
             <div class="section-title" style="margin-top: 25px;">
-                <i class="fas fa-chart-bar"></i>
-                <span>Статистика по вертикалям</span>
+                <i class="fas fa-history"></i>
+                <span>Последние тренировки</span>
+            </div>
+            
+            <div class="scrollable-container" style="max-height: 400px; overflow-y: auto; margin-top: 10px;">
+        `;
+        
+        if (allSessions?.length) {
+            allSessions.slice(0, 10).forEach(session => {
+                const student = students.find(s => s.id === session.user_id);
+                const clientType = clientTypes[session.client_type];
+                
+                html += `
+                    <div class="student-item">
+                        <div class="student-info">
+                            <div class="student-name">${student ? student.username : 'Неизвестный ученик'}</div>
+                            <div class="student-group">${session.vertical || 'Без вертикали'} • ${clientType ? clientType.name : session.client_type}</div>
+                            <div style="margin-top: 5px; font-size: 12px; color: #666;">${session.scenario || 'Тренировка'}</div>
+                        </div>
+                        <div class="student-stats">
+                            <div class="stat-badge">${session.score}/5</div>
+                            <div class="stat-badge">${formatDate(session.date)}</div>
+                        </div>
+                    </div>
+                `;
+            });
+        } else {
+            html += '<div style="text-align: center; padding: 20px; color: #666;">Нет данных о тренировках</div>';
+        }
+        
+        html += `</div>`;
+        
+        dashboardContent.innerHTML = html;
+        
+    } catch (error) {
+        console.error('Ошибка загрузки дашборда:', error);
+        dashboardContent.innerHTML = '<p style="color: #dc3545;">Ошибка загрузки данных</p>';
+    }
+}
+
+async function loadAllStudents() {
+    const studentsContent = document.getElementById('trainerStudentsContent');
+    if (!studentsContent) return;
+    
+    studentsContent.innerHTML = '<p style="color: #666; margin-bottom: 15px; font-size: 14px;">Загрузка списка учеников...</p>';
+    
+    try {
+        const students = await auth.getStudents();
+        
+        let html = `
+            <div class="stats-cards">
+                <div class="stat-card">
+                    <div class="value">${students.length}</div>
+                    <div class="label">Всего учеников</div>
+                </div>
+            </div>
+            
+            <div class="section-title" style="margin-top: 25px;">
+                <i class="fas fa-users"></i>
+                <span>Все ученики</span>
             </div>
             
             <div class="scrollable-container" style="max-height: 500px; overflow-y: auto;">
         `;
         
-        for (const [vertical, stats] of Object.entries(statsByVertical)) {
-            const studentCount = studentsByVertical[vertical]?.size || 0;
-            const avgScore = stats.sessions > 0 ? (stats.totalScore / stats.sessions).toFixed(1) : '0.0';
-            
-            html += `
-                <div class="student-item">
-                    <div class="student-info">
-                        <div class="student-name">${vertical}</div>
+        if (students.length > 0) {
+            students.forEach(student => {
+                html += `
+                    <div class="student-item">
+                        <div class="student-info">
+                            <div class="student-name">${student.username}</div>
+                            <div class="student-group">${student.group_name || 'Без вертикали'}</div>
+                        </div>
+                        <div class="student-stats">
+                            <div class="stat-badge">Уровень: ${student.stats?.currentLevel || 1}</div>
+                        </div>
                     </div>
-                    <div class="student-stats">
-                        <div class="stat-badge">${studentCount} учеников</div>
-                        <div class="stat-badge">${stats.sessions} тренировок</div>
-                        <div class="stat-badge">Средний: ${avgScore}/5</div>
-                    </div>
-                </div>
-            `;
+                `;
+            });
+        } else {
+            html += '<div style="text-align: center; padding: 20px; color: #666;">Нет учеников в системе</div>';
         }
         
         html += `</div>`;
         
-        statisticsContent.innerHTML = html;
+        studentsContent.innerHTML = html;
         
     } catch (error) {
-        console.error('Ошибка загрузки статистики:', error);
-        statisticsContent.innerHTML = '<p style="color: #dc3545;">Ошибка загрузки данных</p>';
+        console.error('Ошибка загрузки учеников:', error);
+        studentsContent.innerHTML = '<p style="color: #dc3545;">Ошибка загрузки данных</p>';
+    }
+}
+
+async function loadAllSessions() {
+    const sessionsContent = document.getElementById('trainerSessionsContent');
+    if (!sessionsContent) return;
+    
+    sessionsContent.innerHTML = '<p style="color: #666; margin-bottom: 15px; font-size: 14px;">Загрузка всех тренировок...</p>';
+    
+    try {
+        const students = await auth.getStudents();
+        let allSessions = await auth.getAllTrainingSessions({ vertical: 'all' });
+        
+        let html = `
+            <div class="stats-cards">
+                <div class="stat-card">
+                    <div class="value">${allSessions?.length || 0}</div>
+                    <div class="label">Всего тренировок</div>
+                </div>
+            </div>
+            
+            <div class="section-title" style="margin-top: 25px;">
+                <i class="fas fa-history"></i>
+                <span>Последние тренировки</span>
+            </div>
+            
+            <div class="scrollable-container" style="max-height: 600px; overflow-y: auto;">
+        `;
+        
+        if (allSessions?.length) {
+            allSessions.slice(0, 20).forEach(session => {
+                const student = students.find(s => s.id === session.user_id);
+                const clientType = clientTypes[session.client_type];
+                
+                html += `
+                    <div class="student-item">
+                        <div class="student-info">
+                            <div class="student-name">${student ? student.username : 'Неизвестный ученик'}</div>
+                            <div class="student-group">${session.vertical || 'Без вертикали'} • ${clientType ? clientType.name : session.client_type}</div>
+                            <div style="margin-top: 5px; font-size: 12px; color: #666;">${session.scenario || 'Тренировка'}</div>
+                        </div>
+                        <div class="student-stats">
+                            <div class="stat-badge">${session.score}/5</div>
+                            <div class="stat-badge">${formatDate(session.date)}</div>
+                        </div>
+                    </div>
+                `;
+            });
+        } else {
+            html += '<div style="text-align: center; padding: 20px; color: #666;">Нет данных о тренировках</div>';
+        }
+        
+        html += `</div>`;
+        
+        sessionsContent.innerHTML = html;
+        
+    } catch (error) {
+        console.error('Ошибка загрузки тренировок:', error);
+        sessionsContent.innerHTML = '<p style="color: #dc3545;">Ошибка загрузки данных</p>';
     }
 }

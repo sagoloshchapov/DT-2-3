@@ -3,6 +3,378 @@ const SUPABASE_URL = 'https://lpoaqliycyuhvdrwuyxj.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_uxkhuA-ngwjNjfaZdHCs7Q_FXOQRrSD';
 const EDGE_FUNCTION_URL = 'https://lpoaqliycyuhvdrwuyxj.supabase.co/functions/v1/rapid-handler';
 
+async function viewStudentSession(sessionIdOrData) {
+    try {
+        let session;
+        const currentUserId = auth.currentUser?.id;
+        
+        if (!currentUserId) {
+            alert('Ошибка: пользователь не авторизован');
+            return;
+        }
+        
+        // Определяем, что нам передали: ID или данные сессии
+        if (typeof sessionIdOrData === 'string') {
+            // Пробуем определить, является ли это JSON строкой
+            if (sessionIdOrData.startsWith('{') || sessionIdOrData.startsWith('[')) {
+                // Это JSON данные
+                try {
+                    session = JSON.parse(decodeURIComponent(sessionIdOrData));
+                } catch (e) {
+                    console.error('Ошибка парсинга сессии:', e);
+                    // Пробуем без decodeURIComponent
+                    try {
+                        session = JSON.parse(sessionIdOrData);
+                    } catch (e2) {
+                        console.error('Ошибка парсинга сессии 2:', e2);
+                    }
+                }
+            } else {
+                // Это ID из базы данных
+                const sessions = await auth.supabaseRequest(`training_sessions?id=eq.${sessionIdOrData}&user_id=eq.${currentUserId}`);
+                session = sessions && sessions.length > 0 ? sessions[0] : null;
+                
+                // Проверяем, что сессия принадлежит текущему пользователю
+                if (session && session.user_id !== currentUserId) {
+                    alert('Доступ запрещен: это не ваша тренировка');
+                    return;
+                }
+            }
+        } else {
+            // Если это уже объект
+            session = sessionIdOrData;
+        }
+        
+        if (!session) {
+            alert('Тренировка не найдена');
+            return;
+        }
+        
+        // Получаем данные для отображения
+        let messages = [];
+        if (session.messages) {
+            try {
+                messages = typeof session.messages === 'string' ? 
+                    JSON.parse(session.messages) : session.messages;
+            } catch (e) {
+                console.error('Ошибка парсинга сообщений:', e);
+                messages = [];
+            }
+        }
+        
+        const clientType = session.clientType ? clientTypes[session.clientType] : null;
+        
+        // Создаем модальное окно
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.style.display = 'flex';
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 900px; max-height: 90vh; width: 90vw;">
+                <div class="modal-header">
+                    <div class="result-icon">💬</div>
+                    <div>
+                        <h3 class="result-title">Мой диалог</h3>
+                        <div style="font-size: 14px; color: #666; margin-top: 5px;">
+                            ${formatDate(session.date)} • ${session.score || 0}/5 • ${clientType ? clientType.name : 'Тренировка'}
+                        </div>
+                    </div>
+                    <button class="btn btn-icon" onclick="this.closest('.modal').remove()">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                
+                <div style="display: flex; flex: 1; gap: 20px; margin-bottom: 20px; min-height: 0; overflow: hidden;">
+                    <div style="flex: 1; display: flex; flex-direction: column; background: #f8f9fa; border-radius: 8px; overflow: hidden;">
+                        <div style="padding: 16px; background: white; border-bottom: 1px solid #ddd; font-weight: 600;">
+                            <i class="fas fa-comments"></i> История диалога (${messages.length} сообщений)
+                        </div>
+                        <div style="flex: 1; overflow-y: auto; padding: 16px;" id="studentChatMessages">
+                            ${messages.length === 0 ? 
+                                '<div style="text-align: center; padding: 40px; color: #666;">Нет данных диалога</div>' :
+                                messages.map(msg => `
+                                    <div style="margin-bottom: 15px; max-width: 80%; ${msg.sender === 'user' ? 'margin-left: auto;' : ''}">
+                                        <div style="font-size: 12px; font-weight: 600; margin-bottom: 4px; color: ${msg.sender === 'ai' ? '#155d27' : '#1e88e5'};">
+                                            ${msg.sender === 'ai' ? 'Клиент (AI)' : 'Вы (Оператор)'}
+                                        </div>
+                                        <div style="padding: 10px; border-radius: 8px; background: ${msg.sender === 'ai' ? '#e8f5e9' : '#e3f2fd'}; border-left: 3px solid ${msg.sender === 'ai' ? '#4caf50' : '#2196f3'};">
+                                            ${msg.text}
+                                        </div>
+                                    </div>
+                                `).join('')
+                            }
+                        </div>
+                    </div>
+                    
+                    <div style="flex: 1; display: flex; flex-direction: column; background: #f8f9fa; border-radius: 8px; overflow: hidden; min-width: 300px;">
+                        <div style="padding: 16px; background: white; border-bottom: 1px solid #ddd; font-weight: 600;">
+                            <i class="fas fa-chart-line"></i> Информация о тренировке
+                        </div>
+                        <div style="flex: 1; overflow-y: auto; padding: 16px;">
+                            <div style="margin-bottom: 20px;">
+                                <div style="font-weight: 600; margin-bottom: 10px;">Детали тренировки</div>
+                                <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid #ddd;">
+                                    <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee;">
+                                        <span>Тип клиента:</span>
+                                        <span>${clientType ? clientType.name : session.client_type || session.clientType || 'Не указан'}</span>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee;">
+                                        <span>Вертикаль:</span>
+                                        <span>${session.vertical || 'Не указана'}</span>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee;">
+                                        <span>Оценка:</span>
+                                        <span style="font-weight: bold; color: ${session.score >= 4 ? '#28a745' : session.score >= 3 ? '#ffc107' : '#dc3545'}">${session.score || 0}/5</span>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee;">
+                                        <span>Заработано XP:</span>
+                                        <span style="color: #10a37f; font-weight: 600;">+${session.xp || session.xp_earned || 0}</span>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee;">
+                                        <span>Длительность:</span>
+                                        <span>${session.duration ? formatDuration(session.duration) : '??:??'}</span>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; padding: 8px 0;">
+                                        <span>Дата:</span>
+                                        <span>${formatDate(session.date)}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            ${session.ai_feedback ? `
+                                <div style="margin-bottom: 20px;">
+                                    <div style="font-weight: 600; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+                                        <span><i class="fas fa-robot"></i> Обратная связь от AI</span>
+                                        <button onclick="this.nextElementSibling.style.maxHeight = this.nextElementSibling.style.maxHeight === 'none' ? '500px' : 'none'; this.querySelector('i').className = this.nextElementSibling.style.maxHeight === 'none' ? 'fas fa-chevron-up' : 'fas fa-chevron-down'" style="background: none; border: none; color: #155d27; cursor: pointer; font-size: 14px;">
+                                            <i class="fas fa-chevron-down"></i>
+                                        </button>
+                                    </div>
+                                    <div style="background: white; padding: 20px; border-radius: 8px; border: 1px solid #ddd; font-size: 14px; line-height: 1.6; white-space: pre-wrap; max-height: 500px; overflow-y: auto; transition: max-height 0.3s ease;">
+                                        ${session.ai_feedback}
+                                    </div>
+                                </div>
+                            ` : ''}
+                            
+                            ${session.trainer_comments && session.trainer_comments.length > 0 ? `
+                                <div style="margin-bottom: 20px;">
+                                    <div style="font-weight: 600; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+                                        <span><i class="fas fa-chalkboard-teacher"></i> Комментарии тренера</span>
+                                        <button onclick="this.nextElementSibling.style.maxHeight = this.nextElementSibling.style.maxHeight === 'none' ? '500px' : 'none'; this.querySelector('i').className = this.nextElementSibling.style.maxHeight === 'none' ? 'fas fa-chevron-up' : 'fas fa-chevron-down'" style="background: none; border: none; color: #155d27; cursor: pointer; font-size: 14px;">
+                                            <i class="fas fa-chevron-down"></i>
+                                        </button>
+                                    </div>
+                                    <div style="background: white; padding: 20px; border-radius: 8px; border: 1px solid #ddd; max-height: 500px; overflow-y: auto; transition: max-height 0.3s ease;">
+                                        ${session.trainer_comments.map(comment => `
+                                            <div style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #eee; &:last-child { border-bottom: none; }">
+                                                <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 12px; color: #666;">
+                                                    <span><strong>${comment.trainer || 'Тренер'}</strong></span>
+                                                    <span>${formatDate(comment.date)}</span>
+                                                </div>
+                                                <div style="font-size: 14px; line-height: 1.5;">${comment.comment}</div>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="display: flex; gap: 12px; padding: 0 20px 20px;">
+                    <button class="btn btn-primary" onclick="downloadMySession('${session.id || encodeURIComponent(JSON.stringify(session))}')">
+                        <i class="fas fa-download"></i> Скачать PDF
+                    </button>
+                    <button class="btn btn-secondary" onclick="this.closest('.modal').remove()" style="margin-left: auto;">
+                        Закрыть
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        setTimeout(() => {
+            const chatContainer = modal.querySelector('#studentChatMessages');
+            if (chatContainer) {
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+        }, 100);
+        
+    } catch (error) {
+        console.error('Ошибка:', error);
+        alert('Ошибка загрузки тренировки');
+    }
+}
+
+async function downloadMySession(sessionIdOrData) {
+    try {
+        let session;
+        const currentUserId = auth.currentUser?.id;
+        
+        if (!currentUserId) {
+            alert('Ошибка: пользователь не авторизован');
+            return;
+        }
+        
+        // Определяем, что нам передали: ID или данные сессии
+        if (typeof sessionIdOrData === 'string') {
+            // Пробуем определить, является ли это JSON строкой
+            if (sessionIdOrData.startsWith('{') || sessionIdOrData.startsWith('[')) {
+                // Это JSON данные
+                try {
+                    session = JSON.parse(decodeURIComponent(sessionIdOrData));
+                } catch (e) {
+                    console.error('Ошибка парсинга сессии:', e);
+                    // Пробуем без decodeURIComponent
+                    try {
+                        session = JSON.parse(sessionIdOrData);
+                    } catch (e2) {
+                        console.error('Ошибка парсинга сессии 2:', e2);
+                    }
+                }
+            } else {
+                // Это ID из базы данных
+                const sessions = await auth.supabaseRequest(`training_sessions?id=eq.${sessionIdOrData}&user_id=eq.${currentUserId}`);
+                session = sessions && sessions.length > 0 ? sessions[0] : null;
+                
+                // Проверяем, что сессия принадлежит текущему пользователю
+                if (session && session.user_id !== currentUserId) {
+                    alert('Доступ запрещен: это не ваша тренировка');
+                    return;
+                }
+            }
+        } else {
+            // Если это уже объект
+            session = sessionIdOrData;
+        }
+        
+        if (!session) {
+            alert('Тренировка не найдена');
+            return;
+        }
+        
+        // Получаем данные для PDF
+        let messages = [];
+        if (session.messages) {
+            try {
+                messages = typeof session.messages === 'string' ? 
+                    JSON.parse(session.messages) : session.messages;
+            } catch (e) {
+                console.error('Ошибка парсинга сообщений:', e);
+                messages = [];
+            }
+        }
+        
+        const clientType = session.clientType ? clientTypes[session.clientType] : null;
+        
+        // Создаем PDF/печать
+        const printWindow = window.open('', '_blank');
+        const html = `
+            <html>
+            <head>
+                <style>
+                    body { font-family: Arial, sans-serif; margin: 20px; }
+                    .header { text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #333; }
+                    .title { color: #155d27; font-size: 24px; margin-bottom: 10px; }
+                    .subtitle { color: #666; font-size: 14px; }
+                    .info-table { width: 100%; border-collapse: collapse; margin-bottom: 25px; }
+                    .info-table td { padding: 8px 12px; border: 1px solid #ddd; }
+                    .chat-title { background: #155d27; color: white; padding: 10px; margin: 25px 0 15px; }
+                    .message { margin-bottom: 15px; }
+                    .ai-message { background: #f0f9f0; padding: 10px; border-left: 4px solid #4caf50; }
+                    .user-message { background: #f0f8ff; padding: 10px; border-left: 4px solid #2196f3; text-align: left; }
+                    .sender { font-weight: bold; margin-bottom: 5px; font-size: 12px; }
+                    .score { font-size: 20px; font-weight: bold; color: #155d27; text-align: center; margin: 20px 0; }
+                    .feedback-section { margin-top: 30px; padding: 15px; background: #f8f9fa; border: 1px solid #ddd; }
+                    .footer { margin-top: 40px; text-align: center; font-size: 12px; color: #666; padding-top: 20px; border-top: 1px solid #ddd; }
+                    @media print {
+                        body { margin: 10px; }
+                        .no-print { display: none; }
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <div class="title">Отчет по тренировочному диалогу</div>
+                    <div class="subtitle">${auth.currentUser?.username || 'Ученик'} | ${new Date().toLocaleDateString('ru-RU')}</div>
+                </div>
+                
+                <table class="info-table">
+                    <tr><td><strong>Сотрудник:</strong></td><td>${auth.currentUser?.username || 'Ученик'}</td></tr>
+                    <tr><td><strong>Вертикаль:</strong></td><td>${session.vertical || 'Не указана'}</td></tr>
+                    <tr><td><strong>Тип клиента:</strong></td><td>${clientType ? clientType.name : session.client_type || session.clientType || 'Не указан'}</td></tr>
+                    <tr><td><strong>Сценарий:</strong></td><td>${session.scenario || 'Тренировка'}</td></tr>
+                    <tr><td><strong>Оценка:</strong></td><td>${session.score || 0}/5</td></tr>
+                    <tr><td><strong>Заработано XP:</strong></td><td>+${session.xp || session.xp_earned || 0}</td></tr>
+                    <tr><td><strong>Длительность:</strong></td><td>${session.duration ? formatDuration(session.duration) : '??:??'}</td></tr>
+                    <tr><td><strong>Дата тренировки:</strong></td><td>${formatDate(session.date)}</td></tr>
+                    <tr><td><strong>Дата отчета:</strong></td><td>${new Date().toLocaleDateString('ru-RU')}</td></tr>
+                </table>
+                
+                <div class="score">Итоговая оценка: ${session.score || 0}/5</div>
+                
+                <div class="chat-title">Полный диалог (${messages.length} сообщений)</div>
+                ${messages.map(msg => `
+                    <div class="message ${msg.sender === 'ai' ? 'ai-message' : 'user-message'}">
+                        <div class="sender">${msg.sender === 'ai' ? 'Клиент' : 'Вы (Оператор)'}</div>
+                        <div>${msg.text}</div>
+                    </div>
+                `).join('')}
+                
+                ${session.ai_feedback ? `
+                <div class="feedback-section">
+                    <strong>Обратная связь от DeepSeek AI:</strong><br><br>
+                    ${session.ai_feedback}
+                </div>
+                ` : ''}
+                
+                ${session.trainer_comments && session.trainer_comments.length > 0 ? `
+                <div class="feedback-section">
+                    <strong>Комментарии тренеров:</strong><br><br>
+                    ${session.trainer_comments.map(comment => `
+                        <div style="margin-bottom: 15px;">
+                            <div style="font-weight: bold;">${comment.trainer || 'Тренер'}</div>
+                            <div style="font-size: 12px; color: #666;">${formatDate(comment.date)}</div>
+                            <div style="margin-top: 5px;">${comment.comment}</div>
+                        </div>
+                    `).join('')}
+                </div>
+                ` : ''}
+                
+                <div class="footer">
+                    © ${new Date().getFullYear()} Dialog.AI Trainer | Личный отчет | Magnit-OMNI
+                </div>
+                
+                <div class="no-print" style="margin-top: 30px; text-align: center;">
+                    <button onclick="window.print()" style="padding: 10px 20px; background: #155d27; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                        🖨️ Распечатать отчет
+                    </button>
+                </div>
+            </body>
+            </html>
+        `;
+        
+        printWindow.document.write(html);
+        printWindow.document.close();
+        
+        setTimeout(() => {
+            printWindow.print();
+        }, 500);
+        
+    } catch (error) {
+        console.error('Ошибка генерации PDF:', error);
+        alert('Ошибка при создании PDF');
+    }
+}
+
+function viewLastChatSession() {
+    if (lastChatSessionData) {
+        viewChatHistory(lastChatSessionData);
+        closeResultModal();
+    } else {
+        alert('Нет данных о последнем чате');
+    }
+}
+
 class SupabaseAuth {
     constructor() {
         this.currentUser = null;
@@ -25,11 +397,16 @@ class SupabaseAuth {
         }
         
         try {
-            const response = await fetch('/api/supabase-proxy', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ endpoint, method, body })
-            });
+            const response = await fetch(`${this.supabaseUrl}/rest/v1/${endpoint}`, {
+    method,
+    headers: {
+        'apikey': 'sb_publishable_uxkhuA-ngwjNjfaZdHCs7Q_FXOQRrSD',
+        'Authorization': 'Bearer sb_publishable_uxkhuA-ngwjNjfaZdHCs7Q_FXOQRrSD',
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation'
+    },
+    body: body ? JSON.stringify(body) : undefined
+});
             
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -252,16 +629,11 @@ class SupabaseAuth {
             const user = users[0];
             const passwordHash = this.hashPassword(newPassword);
             
-            await fetch('/api/supabase-proxy', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    endpoint: `users?id=eq.${user.id}`,
-                    method: 'PATCH',
-                    body: { password_hash: passwordHash },
-                    headers: { 'Prefer': 'return=representation' }
-                })
-            });
+            await this.supabaseRequest(
+    `users?id=eq.${user.id}`,
+    'PATCH',
+    { password_hash: passwordHash }
+);
             
             return { success: true, message: 'Пароль успешно изменен' };
         } catch (error) {
@@ -270,40 +642,29 @@ class SupabaseAuth {
         }
     }
             
-    async saveUserStats(stats) {
-        if (!this.currentUser?.id) {
-            console.error('Нет пользователя для сохранения');
-            return false;
+    async resetPassword(username, newPassword) {
+    try {
+        const users = await this.supabaseRequest(`users?username=eq.${encodeURIComponent(username)}`);
+        
+        if (!users?.length) {
+            return { success: false, message: 'Пользователь не найден' };
         }
         
-        try {
-            const statsJson = JSON.stringify(stats);
-
-            const response = await fetch('/api/supabase-proxy', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    endpoint: `users?id=eq.${this.currentUser.id}`,
-                    method: 'PATCH',
-                    body: { stats: statsJson },
-                    headers: {
-                        'Prefer': 'return=representation',
-                        'Cache-Control': 'no-cache'
-                    }
-                })
-            });
-            
-            if (response.ok) {
-                this.currentUser.stats = stats;
-                this.cache.clear();
-                return true;
-            }
-            return false;
-        } catch (error) {
-            console.error('Ошибка сохранения статистики:', error);
-            return false;
-        }
+        const user = users[0];
+        const passwordHash = this.hashPassword(newPassword);
+        
+        await this.supabaseRequest(
+            `users?id=eq.${user.id}`,
+            'PATCH',
+            { password_hash: passwordHash }
+        );
+        
+        return { success: true, message: 'Пароль успешно изменен' };
+    } catch (error) {
+        console.error('Ошибка сброса пароля:', error);
+        return { success: false, message: 'Ошибка изменения пароля' };
     }
+}
             
     async addTrainingSession(sessionData) {
         if (!this.currentUser) return false;
@@ -939,14 +1300,19 @@ async function viewTrainerSession(sessionId) {
                                 </div>
                             </div>
                             
-                            ${session.ai_feedback ? `
-                                <div style="margin-bottom: 20px;">
-                                    <div style="font-weight: 600; margin-bottom: 10px;">Обратная связь от AI</div>
-                                    <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid #ddd; font-size: 14px; line-height: 1.6; white-space: pre-wrap; max-height: 200px; overflow-y: auto;">
-                                        ${session.ai_feedback}
-                                    </div>
-                                </div>
-                            ` : ''}
+                           ${session.ai_feedback ? `
+    <div style="margin-bottom: 20px;">
+        <div style="font-weight: 600; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+            <span><i class="fas fa-robot"></i> Обратная связь от AI</span>
+            <button onclick="this.nextElementSibling.style.maxHeight = this.nextElementSibling.style.maxHeight === 'none' ? '500px' : 'none'; this.querySelector('i').className = this.nextElementSibling.style.maxHeight === 'none' ? 'fas fa-chevron-up' : 'fas fa-chevron-down'" style="background: none; border: none; color: #155d27; cursor: pointer;">
+                <i class="fas fa-chevron-down"></i>
+            </button>
+        </div>
+        <div style="background: white; padding: 20px; border-radius: 8px; border: 1px solid #ddd; font-size: 14px; line-height: 1.6; white-space: pre-wrap; max-height: 500px; overflow-y: auto; transition: max-height 0.3s ease;">
+            ${session.ai_feedback}
+        </div>
+    </div>
+` : ''}
                             
                             ${session.trainer_comments && session.trainer_comments.length > 0 ? `
                                 <div style="margin-bottom: 20px;">
@@ -1424,7 +1790,7 @@ ${clientTypeInstruction}
         
         const messages = chatMessages.length === 0 ? [systemMessage] : [systemMessage, ...messageHistory];
         
-        const response = await fetch(EDGE_FUNCTION_URL, {
+        const response = await fetch(`${SUPABASE_URL}/functions/v1/rapid-handler`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -4015,31 +4381,34 @@ async function renderHistory() {
             const clientType = clientTypes[item.clientType];
             const historyItem = document.createElement('div');
             historyItem.className = 'history-item';
-            historyItem.onclick = () => viewChatHistory(item);
             
             const hasTrainerComments = item.trainer_comments && item.trainer_comments.length > 0;
             const hasAIFeedback = item.ai_feedback && item.ai_feedback.trim().length > 0;
             
-            historyItem.innerHTML = `
-                <div class="history-item-header">
-                    <div class="history-item-title">${clientType ? clientType.name : 'Тренировка'}</div>
-                    <div class="history-item-score">${item.score}/5</div>
-                </div>
-                <div class="history-item-details">${item.scenario || ''}</div>
-                <div class="history-item-footer">
-                    <div>
-                        <span>${formatDate(item.date)}</span>
-                        <span style="margin-left: 10px;">${item.duration ? formatDuration(item.duration) : '15:00'}</span>
-                        <span style="margin-left: 10px; color: #10a37f;">+${item.xp} XP</span>
-                        ${hasTrainerComments ? '<span style="margin-left: 10px; color: #ffc107;"><i class="fas fa-comment"></i> Есть комментарий тренера</span>' : ''}
-                        ${hasAIFeedback ? '<span style="margin-left: 10px; color: #667eea;"><i class="fas fa-robot"></i> Есть обратная связь от AI</span>' : ''}
-                    </div>
-                    <button class="view-chat-btn" onclick="event.stopPropagation(); viewChatHistory(${JSON.stringify(item).replace(/"/g, '&quot;')})">
-                        <i class="fas fa-comments"></i> Просмотреть чат
-                    </button>
-                </div>
-                ${item.evaluation ? `<div style="margin-top: 8px; padding: 8px; background: #f8f9fa; border-radius: 6px; font-size: 12px; color: #555;">${item.evaluation}</div>` : ''}
-            `;
+historyItem.innerHTML = `
+    <div class="history-item-header">
+        <div class="history-item-title">${clientType ? clientType.name : 'Тренировка'}</div>
+        <div class="history-item-score">${item.score}/5</div>
+    </div>
+    <div class="history-item-details">${item.scenario || ''}</div>
+    <div class="history-item-footer">
+        <div>
+            <span>${formatDate(item.date)}</span>
+            <span style="margin-left: 10px;">${item.duration ? formatDuration(item.duration) : '15:00'}</span>
+            <span style="margin-left: 10px; color: #10a37f;">+${item.xp} XP</span>
+            ${hasTrainerComments ? '<span style="margin-left: 10px; color: #ffc107;"><i class="fas fa-comment"></i> Есть комментарий тренера</span>' : ''}
+            ${hasAIFeedback ? '<span style="margin-left: 10px; color: #667eea;"><i class="fas fa-robot"></i> Есть обратная связь от AI</span>' : ''}
+        </div>
+        <div class="history-item-actions">
+            <button class="view-chat-btn" onclick="viewStudentSession(${JSON.stringify(item).replace(/"/g, '&quot;')})">
+                <i class="fas fa-eye"></i> Просмотр
+            </button>
+            <button class="download-chat-btn" onclick="downloadMySession(${JSON.stringify(item).replace(/"/g, '&quot;')})">
+                <i class="fas fa-download"></i> PDF
+            </button>
+        </div>
+    </div>
+`;
             historyList.appendChild(historyItem);
         });
     } catch (error) {
@@ -4999,8 +5368,7 @@ function searchSessions() {
             console.error('Ошибка поиска:', error);
         }
     }, 300);
-    // ===== ТРЕНЕРСКИЕ ФУНКЦИИ =====
-
+}
 
 async function viewTrainerSession(sessionId) {
     try {
@@ -5230,128 +5598,4 @@ async function submitTrainerComment() {
         console.error('Ошибка:', error);
         alert('Ошибка добавления комментария');
     }
-}
-
-async function downloadSessionPDF(sessionId) {
-    try {
-        const sessions = await auth.supabaseRequest(`training_sessions?id=eq.${sessionId}`);
-        const session = sessions && sessions.length > 0 ? sessions[0] : null;
-        
-        if (!session) {
-            alert('Тренировка не найдена');
-            return;
-        }
-        
-        const students = await auth.getStudents();
-        const student = students.find(s => s.id === session.user_id);
-        const clientType = clientTypes[session.client_type];
-        
-        // Парсим сообщения
-        let messages = [];
-        if (session.messages) {
-            try {
-                messages = typeof session.messages === 'string' ? 
-                    JSON.parse(session.messages) : session.messages;
-            } catch (e) {
-                console.error('Ошибка парсинга сообщений:', e);
-                messages = [{ sender: 'ai', text: 'Ошибка загрузки сообщений' }];
-            }
-        }
-        
-        const printWindow = window.open('', '_blank');
-        const html = `
-            <html>
-            <head>
-                <style>
-                    body { font-family: Arial, sans-serif; margin: 20px; }
-                    .header { text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #333; }
-                    .title { color: #155d27; font-size: 24px; margin-bottom: 10px; }
-                    .subtitle { color: #666; font-size: 14px; }
-                    .info-table { width: 100%; border-collapse: collapse; margin-bottom: 25px; }
-                    .info-table td { padding: 8px 12px; border: 1px solid #ddd; }
-                    .chat-title { background: #155d27; color: white; padding: 10px; margin: 25px 0 15px; }
-                    .message { margin-bottom: 15px; }
-                    .ai-message { background: #f0f9f0; padding: 10px; border-left: 4px solid #4caf50; }
-                    .user-message { background: #f0f8ff; padding: 10px; border-left: 4px solid #2196f3; text-align: left; }
-                    .sender { font-weight: bold; margin-bottom: 5px; font-size: 12px; }
-                    .score { font-size: 20px; font-weight: bold; color: #155d27; text-align: center; margin: 20px 0; }
-                    .feedback-section { margin-top: 30px; padding: 15px; background: #f8f9fa; border: 1px solid #ddd; }
-                    .footer { margin-top: 40px; text-align: center; font-size: 12px; color: #666; padding-top: 20px; border-top: 1px solid #ddd; }
-                    @media print {
-                        body { margin: 10px; }
-                        .no-print { display: none; }
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="header">
-                    <div class="title">Отчет по тренировочному диалогу</div>
-                    <div class="subtitle">Тренерская панель | ${new Date().toLocaleDateString('ru-RU')}</div>
-                </div>
-                
-                <table class="info-table">
-                    <tr><td><strong>Ученик:</strong></td><td>${student?.username || 'Неизвестный ученик'}</td></tr>
-                    <tr><td><strong>Вертикаль:</strong></td><td>${session.vertical || 'Не указана'}</td></tr>
-                    <tr><td><strong>Тип клиента:</strong></td><td>${clientType ? clientType.name : session.client_type || 'Не указан'}</td></tr>
-                    <tr><td><strong>Сценарий:</strong></td><td>${session.scenario || 'Тренировка'}</td></tr>
-                    <tr><td><strong>Оценка:</strong></td><td>${session.score || 0}/5</td></tr>
-                    <tr><td><strong>Длительность:</strong></td><td>${session.duration ? formatDuration(session.duration) : '??:??'}</td></tr>
-                    <tr><td><strong>Дата тренировки:</strong></td><td>${formatDate(session.date)}</td></tr>
-                    <tr><td><strong>Дата отчета:</strong></td><td>${new Date().toLocaleDateString('ru-RU')}</td></tr>
-                </table>
-                
-                <div class="score">Итоговая оценка: ${session.score || 0}/5</div>
-                
-                <div class="chat-title">Полный диалог (${messages.length} сообщений)</div>
-                ${messages.map(msg => `
-                    <div class="message ${msg.sender === 'ai' ? 'ai-message' : 'user-message'}">
-                        <div class="sender">${msg.sender === 'ai' ? 'Клиент' : 'Ученик'}</div>
-                        <div>${msg.text}</div>
-                    </div>
-                `).join('')}
-                
-                ${session.ai_feedback ? `
-                <div class="feedback-section">
-                    <strong>Обратная связь от DeepSeek AI:</strong><br><br>
-                    ${session.ai_feedback}
-                </div>
-                ` : ''}
-                
-                ${session.trainer_comments && session.trainer_comments.length > 0 ? `
-                <div class="feedback-section">
-                    <strong>Комментарии тренеров:</strong><br><br>
-                    ${session.trainer_comments.map(comment => `
-                        <div style="margin-bottom: 15px;">
-                            <div style="font-weight: bold;">${comment.trainer}</div>
-                            <div style="font-size: 12px; color: #666;">${formatDate(comment.date)}</div>
-                            <div style="margin-top: 5px;">${comment.comment}</div>
-                        </div>
-                    `).join('')}
-                </div>
-                ` : ''}
-                
-                <div class="footer">
-                    © ${new Date().getFullYear()} Dialog.AI Trainer | Тренерская панель | Magnit-OMNI
-                </div>
-                
-                <div class="no-print" style="margin-top: 30px; text-align: center;">
-                    <button onclick="window.print()" style="padding: 10px 20px; background: #155d27; color: white; border: none; border-radius: 5px; cursor: pointer;">
-                        🖨️ Распечатать отчет
-                    </button>
-                </div>
-            </body>
-            </html>
-        `;
-        
-        printWindow.document.write(html);
-        printWindow.document.close();
-        
-        setTimeout(() => {
-            printWindow.print();
-        }, 500);
-    } catch (error) {
-        console.error('Ошибка генерации PDF:', error);
-        alert('Ошибка при создании PDF');
-    }
-}
 }
